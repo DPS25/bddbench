@@ -1,7 +1,7 @@
 | CW | Sprint | What is planned                                                            | What have I done                         |
 |----|--------|----------------------------------------------------------------------------|------------------------------------------|
-| 44 | 0      | Defining Scope, selecting Service to benchmark                             | Setting up Github, creating first slides |
-| 45 | 1      | define roadmap and milestones, decide on deployment setup, define pipeline |                                          |
+| 44 | 0      | define roadmap and milestones, decide on deployment setup, define pipeline                             | Setting up Github, creating first slides |
+| 45 | 1      |  |                                          |
 | 46 | 2      |                                                                            |                                          |
 | 47 | 3      |                                                                            |                                          |
 | 48 | 4      |                                                                            |                                          |
