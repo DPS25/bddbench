@@ -1,6 +1,6 @@
 | CW | Sprint | What is planned | What have I done                         |
 |----|--------|-----------------|------------------------------------------|
-| 44 | 0      | find service to benchmark, update Issues and Milestones, general planning of to-dos | update Gherkin to-dos to Milestone 1, got involved in Github  |
+| 44 | 0      | find service to benchmark, update Issues and Milestones, general planning of to-dos | updated Gherkin to-dos for Milestone 1, got involved in Github  |
 | 45 | 1      | discuss future Gherkin development, add Gherkin Milestones to presentation |                                          |
 | 46 | 2      |  |                                          |
 | 47 | 3      |  |                                          |
