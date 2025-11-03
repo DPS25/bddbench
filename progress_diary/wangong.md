@@ -1,7 +1,7 @@
 | CW | Sprint | What is planned | What have I done                         |
 |----|--------|-----------------|------------------------------------------|
 | 44 | 0      | setup Nix environment, configure SOPS + AGE key, request access to secrets | configured Nix flake on dsp25-wangdong, generated AGE key, installed SOPS, cloned repos, tested decryption command (permission pending)  |
-| 45 | 1      |  |                                          |
+| 45 | 1      |  decrypt InfluxDB secrets, verify connection to main influx instance ...|                                          |
 | 46 | 2      |  |                                          |
 | 47 | 3      |  |                                          |
 | 48 | 4      |  |                                          |
