@@ -1,6 +1,6 @@
 | CW | Sprint | What is planned | What have I done                         |
 |----|--------|-----------------|------------------------------------------|
-| 44 | 0      | Environment setup (Nix + SOPS + SSH) |  |
+| 44 | 0      | setup Nix environment, configure SOPS + AGE key, request access to secrets | configured Nix flake on dsp25-wangdong, generated AGE key, installed SOPS, cloned repos, tested decryption command (permission pending)  |
 | 45 | 1      |  |                                          |
 | 46 | 2      |  |                                          |
 | 47 | 3      |  |                                          |
