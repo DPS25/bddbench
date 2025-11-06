@@ -56,3 +56,66 @@ Feature: InfluxDB v2 write path performance (POC) # features/write_latency.featu
 5 steps passed, 0 failed, 0 skipped, 0 undefined
 Took 0m0.056s
 ```
+
+--------------------------------
+
+# First real Influx Test 
+
+```
+# Influx BDD Benchmark
+
+Dieses Repo/Unterverzeichnis enthält ein erstes **echtes** BDD-Feature, das gegen unsere InfluxDB schreibt und die Daten wieder ausliest. Damit testen wir End-to-End: Token gültig, Org korrekt, Bucket erreichbar, Flux-Query funktioniert.
+
+---
+
+## Kurze Idee
+
+Das Feature `features/influx_basic_benchmark.feature` macht:
+
+1. mit Env-Vars zu Influx verbinden
+2. 10 Punkte mit Measurement `bddbench_write` und einer eindeutigen `run_id` ins Bucket schreiben
+3. per Flux genau diese 10 Punkte wieder lesen
+4. (optional) Latenz prüfen
+
+So können wir unsere Influx-Umgebung direkt aus dem BDD-Setup heraus testen.
+
+---
+
+## 1. Influx-Token im UI holen
+
+1. In Influx links auf **Load Data** gehen
+2. Tab **API Tokens**
+3. Entweder bestehenden Token anklicken oder **Generate API Token → Custom API Token**
+4. Für Bucket **`dsp25`** `read` **und** `write` anhaken
+5. Token kopieren → später als `INFLUX_TOKEN` benutzen
+
+> Hinweis: Der Token muss wirklich aus dem UI kommen. Der in irgendwelchen System-Env-Vars hinterlegte `INFLUX_ADMIN_TOKEN=...` wurde von Influx bei unseren Tests nicht akzeptiert.
+
+---
+
+## 2. Org-Namen herausfinden (empfohlen)
+
+Mit dem Token einmal die Orgs vom Server abfragen:
+
+```bash
+curl -s -H "Authorization: Token <TOKEN_AUS_UI>" http://localhost:8086/api/v2/orgs
+```
+
+```
+# 1. Repo holen
+git clone -b POC https://github.com/DPS25/bddbench.git
+cd bddbench/gherkin-poc
+
+# 2. (optional) Org-Namen aus Influx holen
+curl -s -H "Authorization: Token <TOKEN_AUS_UI>" http://localhost:8086/api/v2/orgs
+
+# 3. NixOS-Shell mit Python + behave öffnen
+nix-shell -p python3 python3Packages.pip python3Packages.behave python3Packages.influxdb-client
+
+# 4. Benchmark starten
+INFLUX_URL=http://localhost:8086 \
+INFLUX_ORG=<ORG_AUS_INFLUX> \
+INFLUX_BUCKET=dsp25 \
+INFLUX_TOKEN="<TOKEN_AUS_UI>" \
+behave -v --tags @influx
+```
