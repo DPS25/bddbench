@@ -59,9 +59,7 @@ Took 0m0.056s
 
 --------------------------------
 
-# First real Influx Test 
-
-```
+## First real Influx Test 
 # Influx BDD Benchmark
 
 Dieses Repo/Unterverzeichnis enthält ein erstes **echtes** BDD-Feature, das gegen unsere InfluxDB schreibt und die Daten wieder ausliest. Damit testen wir End-to-End: Token gültig, Org korrekt, Bucket erreichbar, Flux-Query funktioniert.
@@ -93,14 +91,15 @@ So können wir unsere Influx-Umgebung direkt aus dem BDD-Setup heraus testen.
 
 ---
 
-## 2. Org-Namen herausfinden (empfohlen)
+## 2. Org-Namen herausfinden 
 
 Mit dem Token einmal die Orgs vom Server abfragen:
 
 ```bash
 curl -s -H "Authorization: Token <TOKEN_AUS_UI>" http://localhost:8086/api/v2/orgs
 ```
-
+------------------------------
+## 3. Wie wird es ausgeführt
 ```
 # 1. Repo holen
 git clone -b POC https://github.com/DPS25/bddbench.git
