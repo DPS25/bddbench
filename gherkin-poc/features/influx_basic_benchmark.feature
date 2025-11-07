@@ -7,4 +7,4 @@ Feature: Basic InfluxDB write and read-back benchmark
   Scenario: write and read back a small batch
     When I write 10 points with measurement "bddbench_write"
     Then I can read back 10 points with the same run id
-    And the averaage write latency shall be <= 500 ms
+    And the average write latency shall be <= 500 ms
