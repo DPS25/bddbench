@@ -39,15 +39,16 @@ def step_bucket_from_env(context):
 def step_write_points(context, count, measurement):
     run_id = str(uuid.uuid4())
     context.run_id = run_id
-
     latencies = []
+
+    base_time = time.time_ns()
 
     for i in range(count):
         point = (
             Point(measurement)
             .tag("run_id", run_id)
             .field("value", i)
-            .time(time.time_ns(), WritePrecision.NS)
+            .time(base_time + i, WritePrecision.NS)
         )
 
         start = time.perf_counter()
@@ -57,9 +58,7 @@ def step_write_points(context, count, measurement):
             record=point,
         )
         end = time.perf_counter()
-
-        lat_ms = (end - start) * 1000.0
-        latencies.append(lat_ms)
+        latencies.append((end - start) * 1000.0)
 
     context.write_latencies_ms = latencies
 
