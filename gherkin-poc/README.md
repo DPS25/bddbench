@@ -62,59 +62,59 @@ Took 0m0.056s
 ## First real Influx Test 
 # Influx BDD Benchmark
 
-Dieses Repo/Unterverzeichnis enthält ein erstes **echtes** BDD-Feature, das gegen unsere InfluxDB schreibt und die Daten wieder ausliest. Damit testen wir End-to-End: Token gültig, Org korrekt, Bucket erreichbar, Flux-Query funktioniert.
+This repo contains the first **real** BDD feature that writes data to our InfluxDB and reads it back. This lets us test end-to-end: token valid, org correct, bucket reachaable, Flux query works
 
 ---
 
-## Kurze Idee
+## idea
 
-Das Feature `features/influx_basic_benchmark.feature` macht:
+the feature `features/influx_basic_benchmark.feature` does:
 
-1. mit Env-Vars zu Influx verbinden
-2. 10 Punkte mit Measurement `bddbench_write` und einer eindeutigen `run_id` ins Bucket schreiben
-3. per Flux genau diese 10 Punkte wieder lesen
-4. (optional) Latenz prüfen
-
-So können wir unsere Influx-Umgebung direkt aus dem BDD-Setup heraus testen.
-
----
-
-## 1. Influx-Token im UI holen
-
-1. In Influx links auf **Load Data** gehen
-2. Tab **API Tokens**
-3. Entweder bestehenden Token anklicken oder **Generate API Token → Custom API Token**
-4. Für Bucket **`dsp25`** `read` **und** `write` anhaken
-5. Token kopieren → später als `INFLUX_TOKEN` benutzen
-
-> Hinweis: Der Token muss wirklich aus dem UI kommen. Der in irgendwelchen System-Env-Vars hinterlegte `INFLUX_ADMIN_TOKEN=...` wurde von Influx bei unseren Tests nicht akzeptiert.
+1. connects via Env-Vars with the influx
+2. 10 points with measurement `bddbench_write` and a specific `run_id` wrote into the bucket
+3. the influx reads the 10 points
+4. (optional) check latency
+   
+We are able to test it directly from our BDD environment
 
 ---
 
-## 2. Org-Namen herausfinden 
+## 1. get influx tokens directly from UI
 
-Mit dem Token einmal die Orgs vom Server abfragen:
+1. in Influx, go to Load Data on the left
+2. Tab "API Tokens"
+3. Either click an existing token or **Generate API Token --> Custom API Token**
+4. for bucket `dsp25` check both `read` and `write` 
+5. Copy the token --> later use it as  `INFLUX_TOKEN` 
+
+> Note: the token must really come from the UI
+
+---
+
+## 2. Find Org name
+
+Query the server once with teh token
 
 ```bash
-curl -s -H "Authorization: Token <TOKEN_AUS_UI>" http://localhost:8086/api/v2/orgs
+curl -s -H "Authorization: Token <TOKEN_FROM_UI>" http://localhost:8086/api/v2/orgs
 ```
 ------------------------------
-## 3. Wie wird es ausgeführt
+## 3. How to run
 ```
-# 1. Repo holen
+# 1. fetch repo
 git clone -b POC https://github.com/DPS25/bddbench.git
 cd bddbench/gherkin-poc
 
-# 2. (optional) Org-Namen aus Influx holen
-curl -s -H "Authorization: Token <TOKEN_AUS_UI>" http://localhost:8086/api/v2/orgs
+# 2. (optional) get org name from Influx
+curl -s -H "Authorization: Token <TOKEN_FROM_UI>" http://localhost:8086/api/v2/orgs
 
-# 3. NixOS-Shell mit Python + behave öffnen
+# 3. open NixOS shell with Python + behave
 nix-shell -p python3 python3Packages.pip python3Packages.behave python3Packages.influxdb-client
 
-# 4. Benchmark starten
+# 4. start the benchmark
 INFLUX_URL=http://localhost:8086 \
-INFLUX_ORG=<ORG_AUS_INFLUX> \
+INFLUX_ORG=<S3> \
 INFLUX_BUCKET=dsp25 \
-INFLUX_TOKEN="<TOKEN_AUS_UI>" \
+INFLUX_TOKEN="<TOKEN_FROM_UI>" \
 behave -v --tags @influx
 ```
