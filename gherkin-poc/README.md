@@ -118,3 +118,53 @@ INFLUX_BUCKET=dsp25 \
 INFLUX_TOKEN="<TOKEN_FROM_UI>" \
 behave -v --tags @influx
 ```
+
+
+# Offline KPI Mock + Single $t$-Test
+
+This bundle generates a mock CSV of KPI rows and then run a one-sample, two-sided t-test against a target latency.
+
+## Files
+
+- `mock_seed_kpis_local.py`: Generates realistic mock KPI rows into `mock/main_kpis.csv` (two groups: `config_id=v1` and `config_id=v2`).
+
+- `analyze_ttest_single_offline.py`: Loads KPI values from the CSV, filters by scenario/tag, runs a _two-sided one-sample t-test_ vs `TARGET_MS`, and plots a histogram + mean with 95% confidence interval.
+
+## Start
+
+```shell
+# 1) Create mock data
+python mock_seed_kpis_local.py
+
+# 2) Run a single t-test on a subset (e.g., scenario=write_basic, config_id=v1)
+export KPI_CSV=mock/main_kpis.csv
+export KPI_SCENARIO=write_basic
+export KPI_GROUP_TAG=config_id
+export KPI_GROUP_VAL=v1
+export KPI_FIELD=mean_ms          # or median_ms, p95_ms, ...
+export KPI_TARGET_MS=15
+export KPI_MEASUREMENT=bddbench_summary
+
+python analyze_ttest_single_offline.py
+```
+
+The script prints statistical results:
+
+- sample size (`n`)
+- sample mean and standard deviation
+- t-statistic
+- two-sided p-value
+- 95% confidence interval for the mean
+
+It produces two plots:
+
+- Histogram of per-run KPI values
+- Mean with 95% confidence interval
+
+## What the mock seeder produces
+
+`mock_seed_kpis_local.py` writes a CSV that mimics an Influx query export (flat records with `_measurement`, `_field`, `_value`, and tags). It creates:
+
+- 10 runs for `config_id=v1` (slightly slower; base ~10.05 ms, spread ~0.06)
+- 10 runs for `config_id=v2` (slightly faster; base ~9.95 ms, spread ~0.05)
+- Each "run" aggregates ~20 synthetic samples into summary fields.
