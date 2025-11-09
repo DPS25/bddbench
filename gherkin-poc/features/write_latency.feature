@@ -7,7 +7,7 @@ Feature: InfluxDB v2 write path performance (POC)
     Given an InfluxDB endpoint is configured
     And a bucket "bdbench" is defined
 
-  @poc @m1 @write
+  @poc @m1 @write @influx
   Scenario Outline: Write load with basic thresholds
     When I write <points> points per second for <duration> seconds
     Then the median latency shall be <= <p50_ms> ms
