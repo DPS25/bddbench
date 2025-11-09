@@ -5,7 +5,7 @@ Feature: InfluxDB v2 write path performance (POC)
 
   Background:
     Given an InfluxDB endpoint is configured
-    And a bucket "bdbench" is defined
+    And a bucket "dsp25" is defined
 
   @poc @m1 @write @influx
   Scenario Outline: Write load with basic thresholds
