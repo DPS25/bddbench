@@ -2,19 +2,10 @@ import os
 import time
 import uuid
 import statistics
-import logging 
 
 from behave import given, when, then
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
-
-# zu logging
-log = logging.getLogger("basic_influx")   
-if not log.handlers: 
-    _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    log.addHandler(_h)
-log.setLevel(logging.DEBUG)
 
 @given("an InfluxDB v2 endpoint is configured from environment")
 def step_config_from_env(context):
@@ -33,8 +24,6 @@ def step_config_from_env(context):
     context.influx_url = url
     context.write_api = client.write_api(write_options=SYNCHRONOUS)
     context.query_api = client.query_api()
-    log.debug(f"connected to InfluxDB: url={url}, org={org}")         # zu logging
-
 
 @given("a target bucket from environment is available")
 def step_bucket_from_env(context):
@@ -42,18 +31,13 @@ def step_bucket_from_env(context):
     if not bucket:
         raise RuntimeError("INFLUX_BUCKET nicht gesetzt!")
     context.influx_bucket = bucket
-    log.debug(f"target bucket: {bucket}")                                 # zu logging   
 
 
 @when('I write {count:d} points with measurement "{measurement}"')
 def step_write_points(context, count, measurement):
     run_id = str(uuid.uuid4())
     context.run_id = run_id
-    context.measurement = measurement                                     # zu logging
     latencies = []
-
-    log.debug(f"writing {count} points… measurement={measurement}, "
-              f"bucket={context.influx_bucket}, run_id={run_id}")         # zu logging
 
     base_time = time.time_ns()
 
@@ -87,12 +71,8 @@ from(bucket: "{context.influx_bucket}")
   |> keep(columns: ["_time", "_value", "run_id"])
     '''
 
-      log.debug("querying written points for verification…")            # zu logging
-
     tables = context.query_api.query(org=context.influx_org, query=flux)
     rows = sum(len(t.records) for t in tables)
-    log.debug(f"read-back rows={rows} (expected {expected_count})")       # zu logging
-
     if rows != expected_count:
         raise AssertionError(
             f"expected {expected_count} points for run_id={context.run_id}, got {rows}"
@@ -106,7 +86,6 @@ def step_check_avg_latency(context, max_avg_ms):
         raise AssertionError("no write latencies recorded")
 
     avg = statistics.mean(lats)
-    log.debug(f"avg latency={avg:.2f} ms (n={len(lats)}), threshold={max_avg_ms} ms")   #zu ogging
     if avg > max_avg_ms:
         raise AssertionError(
             f"average latency {avg:.2f} ms exceeded limit {max_avg_ms} ms"
