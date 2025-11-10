@@ -8,7 +8,13 @@ from behave import given, when, then
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-log = logging.getLogger("basic_influx")
+# zu logging
+log = logging.getLogger("basic_influx")   
+if not log.handlers: 
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    log.addHandler(_h)
+log.setLevel(logging.DEBUG)
 
 @given("an InfluxDB v2 endpoint is configured from environment")
 def step_config_from_env(context):
