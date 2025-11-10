@@ -27,7 +27,7 @@ def step_config_from_env(context):
     context.influx_url = url
     context.write_api = client.write_api(write_options=SYNCHRONOUS)
     context.query_api = client.query_api()
-    log.debug(f"connected to InfluxDB: url={url}, org={org}") 
+    log.debug(f"connected to InfluxDB: url={url}, org={org}")         # zu logging
 
 
 @given("a target bucket from environment is available")
@@ -81,7 +81,7 @@ from(bucket: "{context.influx_bucket}")
   |> keep(columns: ["_time", "_value", "run_id"])
     '''
 
-      log.debug("querying written points for verification…")  
+      log.debug("querying written points for verification…")            # zu logging
 
     tables = context.query_api.query(org=context.influx_org, query=flux)
     rows = sum(len(t.records) for t in tables)
