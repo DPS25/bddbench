@@ -7,7 +7,8 @@ Feature: InfluxDB v2 write path performance (POC)
     Given an InfluxDB endpoint is configured
     And a bucket "dsp25" is defined
 
-  @poc @m1 @write @influx
+# no @Influx to test Gherkin features!
+  @poc @m1 @write 
   Scenario Outline: Write load with basic thresholds
     When I write <points> points per second for <duration> seconds
     Then the median latency shall be <= <p50_ms> ms
