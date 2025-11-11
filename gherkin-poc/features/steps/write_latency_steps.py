@@ -63,7 +63,7 @@ def _percentile_ms(values_ms: List[float], p: float) -> float:
     return d0 + d1
 
 
-@given("an InfluxDB v2 endpoint is configured from environment")
+#@given("an InfluxDB v2 endpoint is configured from environment")
 @given("an InfluxDB endpoint is configured")
 def step_config_influx(context):
     """
