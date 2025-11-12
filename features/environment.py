@@ -6,46 +6,36 @@ from systemd.journal import JournalHandler
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 
-def _config_influx_from_env(context: Context, env_prefix: str, ctx_prefix: str) -> None:
+def _load_env(context: Context):
     """
-    Generic InfluxDB configuration loader.
-
-    - env_prefix: prefix for environment variables, e.g. "SUT_INFLUX" or "MAIN_INFLUX"
-    - ctx_prefix: prefix for context attributes, e.g. "sut_influx" or "main_influx"
-    """
-    url = os.getenv(f"{env_prefix}_URL")
-    token = os.getenv(f"{env_prefix}_TOKEN")
-    org = os.getenv(f"{env_prefix}_ORG")
-
-    if not url or not token or not org:
-        raise RuntimeError(
-            f"{env_prefix}_URL, {env_prefix}_TOKEN oder {env_prefix}_ORG nicht gesetzt – bitte beim behave-Aufruf mitgeben!"
-        )
-
-    client = InfluxDBClient(url=url, token=token, org=org)
-    setattr(context, f"{ctx_prefix}_client", client)
-    setattr(context, f"{ctx_prefix}_org", org)
-    setattr(context, f"{ctx_prefix}_url", url)
-    setattr(context, f"{ctx_prefix}_write_api", client.write_api(write_options=SYNCHRONOUS))
-    setattr(context, f"{ctx_prefix}_query_api", client.query_api())
-
-
-def _config_sut_influx_from_env(context: Context) -> None:
-    """
-    Setup SUT InfluxDB configuration from environment variables.
+    Load environment variables into the context.
     :param context:
     :return:
     """
-    _config_influx_from_env(context, env_prefix="SUT_INFLUX", ctx_prefix="sut_influx")
+
+    # ----- main influx DB -----
+    context.config.inlufxdb.main.url = os.getenv("INFLUXDB_MAIN_URL", "http://localhost:8086")
+    context.config.influxdb.main.token = os.getenv("INFLUXDB_MAIN_TOKEN", None)
+    context.config.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
+    context.config.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
+
+    assert context.config.inlufxdb.main.url is not None, "INFLUXDB_MAIN_URL environment variable must be set"
+    assert context.config.influxdb.main.token is not None, "INFLUXDB_MAIN_TOKEN environment variable must be set"
+    assert context.config.influxdb.main.org is not None, "INFLUXDB_MAIN_ORG environment variable must be set"
+    assert context.config.influxdb.main.bucket is not None, "INFLUXDB_MAIN_BUCKET environment variable must be set"
+
+    # ----- SUT influx DB -----
+    context.config.influxdb.sut.url = os.getenv("INFLUXDB_SUT_URL", "http://localhost:8086")
+    context.config.influxdb.sut.token = os.getenv("INFLUXDB_SUT_TOKEN", None)
+    context.config.influxdb.sut.org = os.getenv("INFLUXDB_SUT_ORG", None)
+    context.config.influxdb.sut.bucket = os.getenv("INFLUXDB_SUT_BUCKET", None)
+
+    assert context.config.influxdb.sut.url is not None, "INFLUXDB_SUT_URL environment variable must be set"
+    assert context.config.influxdb.sut.token is not None, "INFLUXDB_SUT_TOKEN environment variable must be set"
+    assert context.config.influxdb.sut.org is not None, "INFLUXDB_SUT_ORG environment variable must be set"
+    assert context.config.influxdb.sut.bucket is not None, "INFLUXDB_SUT_BUCKET environment variable must be set"
 
 
-def _config_main_influx_from_env(context: Context) -> None:
-    """
-    Setup main InfluxDB configuration from environment variables.
-    :param context:
-    :return:
-    """
-    _config_influx_from_env(context, env_prefix="MAIN_INFLUX", ctx_prefix="main_influx")
 
 def _setup_logging(context: Context):
     """
@@ -94,9 +84,7 @@ def before_all(context: Context):
     :return:
     """
     _setup_logging(context)
-    _config_main_influx_from_env(context)
-    _config_sut_influx_from_env(context)
-
+    _load_env(context)
 def before_feature(context: Context, feature: Feature):
     """
     Log the start of a feature.
