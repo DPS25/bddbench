@@ -168,3 +168,43 @@ It produces two plots:
 - 10 runs for `config_id=v1` (slightly slower; base ~10.05 ms, spread ~0.06)
 - 10 runs for `config_id=v2` (slightly faster; base ~9.95 ms, spread ~0.05)
 - Each "run" aggregates ~20 synthetic samples into summary fields.
+
+
+---
+
+# Two-sample $t$-Test
+This module compares two independent groups (e.g., `config_id=v1` vs `config_id=v2`) using a two-sided Welch two-sample t-test, which does not assume equal variances. It computes:
+
+- sample size per group  
+- group means and standard deviations  
+- Welch t-statistic  
+- two-sided p-value  
+- 95% confidence intervals for each group  
+- 95% confidence interval for the difference in means  
+
+It also generates two plots:
+
+- Overlaid histograms for both groups  
+- Mean comparison with per-group 95% confidence intervals
+
+## File
+
+- `analyze_ttest_two_sample_offline.py`: Loads KPI values for two groups from the same CSV format, filters by scenario/tag, and performs a two-sample Welch t-test.
+
+## Start
+
+```shell
+# 1) Create mock data
+python mock_seed_kpis_local.py
+
+# 2) Compare two groups (e.g., config_id=v1 vs config_id=v2)
+export KPI_CSV=mock/main_kpis.csv
+export KPI_SCENARIO=write_basic
+export KPI_GROUP_TAG=config_id
+export KPI_GROUP_VAL_A=v1
+export KPI_GROUP_VAL_B=v2
+export KPI_FIELD=mean_ms
+export KPI_MEASUREMENT=bddbench_summary
+
+python analyze_ttest_two_sample_offline.py
+```
