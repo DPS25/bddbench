@@ -47,6 +47,7 @@
                 echo "export ENV_NAME=YOURNAME && nix develop"
               fi
             fi
+            source .venv/bin/activate
         '';
 
     };
