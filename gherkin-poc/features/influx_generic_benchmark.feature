@@ -13,6 +13,6 @@ Feature: InfluxDB v2 generic benchmark
     And I store the generic benchmark result as "gherkin-poc/reports/generic-<id>.json"
 
     Examples:
-      | id    | points_per_second | duration_seconds | measurement        | p50_ms |
-      | smoke | 200               | 5                | bddbench_generic   | 50     |
-      | load  | 1000              | 10               | bddbench_generic   | 80     |
+      | id    | points_per_second | duration_seconds | measurement        |
+      | smoke | 200               | 5                | bddbench_generic   |
+      | load  | 1000              | 10               | bddbench_generic   |
