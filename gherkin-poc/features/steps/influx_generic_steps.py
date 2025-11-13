@@ -127,19 +127,6 @@ def step_run_generic_benchmark(context, points_per_second, duration_seconds, mea
     }
 
 
-@then("the median write latency shall be <= {max_p50_ms:d} ms")
-def step_check_median(context, max_p50_ms):
-    lats = getattr(context, "write_latencies_ms", [])
-    if not lats:
-        raise AssertionError("no latencies recorded")
-
-    p50 = _percentile_ms(lats, 50)
-    if p50 > max_p50_ms:
-        raise AssertionError(f"p50 latency {p50:.2f} ms exceeded limit {max_p50_ms} ms")
-
-    context.p50_latency_ms = p50
-
-
 @then('I store the generic benchmark result as "{outfile}"')
 def step_store_result(context, outfile):
     lats = getattr(context, "write_latencies_ms", [])
