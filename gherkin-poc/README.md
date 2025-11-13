@@ -25,6 +25,8 @@ git clone https://github.com/DPS25/bddbench.git
 
 cd bddbench/gherkin-poc
 
+nix-shell -p python3 python3Packages.pip python3Packages.behave python3Packages.influxdb-client
+
 python3 -m venv .venv
 
 source .venv/bin/activate
