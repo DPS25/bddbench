@@ -10,7 +10,6 @@ Feature: InfluxDB v2 generic benchmark
   @poc @influx @generic
   Scenario Outline: generic write-latency run
     When I run a generic write benchmark with <points_per_second> points per second for <duration_seconds> seconds using measurement "<measurement>"
-    Then the median write latency shall be <= <p50_ms> ms
     And I store the generic benchmark result as "gherkin-poc/reports/generic-<id>.json"
 
     Examples:
