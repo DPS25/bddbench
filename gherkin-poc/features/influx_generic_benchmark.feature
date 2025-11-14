@@ -4,8 +4,8 @@ Feature: InfluxDB v2 generic benchmark
   I want to run write-benchmarks against InfluxDB v2 with adjustable parameters
 
   Background:
-    Given an InfluxDB v2 endpoint is configured from environment
-    And a target bucket from environment is available
+    Given a generic InfluxDB v2 endpoint is configured from environment
+    And a generic target bucket from environment is available
 
   @poc @influx @generic
   Scenario Outline: generic write-latency run
