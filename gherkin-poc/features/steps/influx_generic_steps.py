@@ -25,7 +25,7 @@ def _ensure_client(context):
     org = os.getenv("INFLUX_ORG")
 
     if not url or not token or not org:
-        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG müssen im Environment gesetzt sein")
+        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG need to be set in the environment")
 
     client = InfluxDBClient(url=url, token=token, org=org)
     write_api = client.write_api(write_options=SYNCHRONOUS)
@@ -57,17 +57,17 @@ def _percentile_ms(vals: List[float], p: int) -> float:
 
 # ---------- background steps ----------
 
-@given("an InfluxDB v2 endpoint is configured from environment")
+@given("a generic InfluxDB v2 endpoint is configured from environment")
 def step_influx_from_env(context):
     _ensure_client(context)
 
 
-@given("a target bucket from environment is available")
+@given("a generic target bucket from environment is available")
 def step_bucket_from_env(context):
     if not getattr(context, "influx_bucket", None):
         env_bucket = os.getenv("INFLUX_BUCKET")
         if not env_bucket:
-            raise RuntimeError("INFLUX_BUCKET muss im Environment gesetzt sein oder im Feature angegeben werden")
+            raise RuntimeError("INFLUX_BUCKET needs to be set in the environment or given in the feature")
         context.influx_bucket = env_bucket
 
 
@@ -76,8 +76,8 @@ def step_bucket_from_env(context):
 @when('I run a generic write benchmark with {points_per_second:d} points per second for {duration_seconds:d} seconds using measurement "{measurement}"')
 def step_run_generic_benchmark(context, points_per_second, duration_seconds, measurement):
     """
-    Sehr ähnlich zu eurem write-latency-POC, aber rein über Parameter gesteuert.
-    Wir messen jede Schreiboperation und sammeln die Latenzen in context.write_latencies_ms.
+    very similar to our write latency POC, but controlled purely via parameters. 
+    We measure each write operation and collect the latencies in context.write_latencies
     """
     _ensure_client(context)
 
