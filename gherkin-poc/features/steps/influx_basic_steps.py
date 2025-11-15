@@ -19,7 +19,7 @@ def step_config_from_env(context):
 
     if not url or not token or not org:
         raise RuntimeError(
-            "INFLUX_URL, INFLUX_TOKEN oder INFLUX_ORG nicht gesetzt – bitte beim behave-Aufruf mitgeben!"
+            "INFLUX_URL, INFLUX_TOKEN or INFLUX_ORG is not set – needs to be given before calling behave"
         )
 
     client = InfluxDBClient(url=url, token=token, org=org)
