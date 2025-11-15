@@ -13,8 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 @given("a generic InfluxDB v2 endpoint is configured from environment")
 def step_generic_endpoint_from_env(context):
     """
-    Liest INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG aus dem Environment
-    und speichert sie im context für den Query-Benchmark.
+    Reads INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG from the environment and saves them in the context.
     """
     url = os.getenv("INFLUX_URL")
     token = os.getenv("INFLUX_TOKEN")
@@ -27,18 +26,15 @@ def step_generic_endpoint_from_env(context):
     context.influx_token = token
     context.influx_org = org
 
-
 @given("a generic target bucket from environment is available")
 def step_generic_bucket_from_env(context):
     """
-    Liest INFLUX_BUCKET aus dem Environment und speichert es im context.
+    Reads INFLUX_BUCKET and saves in context.
     """
     bucket = os.getenv("INFLUX_BUCKET")
     if not bucket:
         raise RuntimeError("INFLUX_BUCKET must be set in environment")
     context.influx_bucket = bucket
-
-
 
 # ---------- Datatypes -----------
 
@@ -51,7 +47,6 @@ class QueryRunMetrics:
     total_time_s: float | None
     bytes_returned: int
     rows_returned: int
-
 
 # ---------- Helpers ----------
 
