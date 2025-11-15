@@ -12,11 +12,11 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
-      buildInputs = [ pkgs.sops pkgs.yq ];
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv];
         shellHook = ''
           echo "🔐 Loading secrets from ${secrets}/secrets"
           export SECRETS_DIR=${secrets}/secrets
-
+          uv sync
           if [ -f "$SECRETS_DIR/main_influx.enc.yaml" ]; then
             echo "🔑 Loading main_influx.enc.yaml..."
             eval $(sops -d "$SECRETS_DIR/main_influx.enc.yaml" | \
