@@ -6,9 +6,38 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any
 
-from behave import when, then
+from behave import given, when, then
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+@given("a generic InfluxDB v2 endpoint is configured from environment")
+def step_generic_endpoint_from_env(context):
+    """
+    Liest INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG aus dem Environment
+    und speichert sie im context für den Query-Benchmark.
+    """
+    url = os.getenv("INFLUX_URL")
+    token = os.getenv("INFLUX_TOKEN")
+    org = os.getenv("INFLUX_ORG")
+
+    if not url or not token or not org:
+        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG must be set in environment")
+
+    context.influx_url = url
+    context.influx_token = token
+    context.influx_org = org
+
+
+@given("a generic target bucket from environment is available")
+def step_generic_bucket_from_env(context):
+    """
+    Liest INFLUX_BUCKET aus dem Environment und speichert es im context.
+    """
+    bucket = os.getenv("INFLUX_BUCKET")
+    if not bucket:
+        raise RuntimeError("INFLUX_BUCKET must be set in environment")
+    context.influx_bucket = bucket
+
 
 
 # ---------- Datatypes -----------
@@ -259,10 +288,10 @@ def step_run_query_benchmark(context,
       - bytes/rows
       - error_rate
     """
-    base_url = os.getenv("INFLUX_URL")
-    token = os.getenv("INFLUX_TOKEN")
-    org = context.influx_org
-    bucket = context.influx_bucket
+    base_url = getattr(context, "influx_url", None) or os.getenv("INFLUX_URL")
+    token = getattr(context, "influx_token", None) or os.getenv("INFLUX_TOKEN")
+    org = getattr(context, "influx_org", None) or os.getenv("INFLUX_ORG")
+    bucket = getattr(context, "influx_bucket", None) or os.getenv("INFLUX_BUCKET")
 
     if not base_url or not token or not org or not bucket:
         raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET must be set")
