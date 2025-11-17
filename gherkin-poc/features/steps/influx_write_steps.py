@@ -123,6 +123,63 @@ def _maybe_cleanup_before_run(context, measurement: str):
    # cleanup logic not implemented
     print(f"[write-bench] NOTE: cleanup for measurement={measurement} is not implemented here.")
 
+def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
+    """
+    Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
+
+    Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
+    to be set in the environment. If not set, the export is skipped.
+    """
+    main_url = os.getenv("MAIN_INFLUX_URL")
+    main_token = os.getenv("MAIN_INFLUX_TOKEN")
+    main_org = os.getenv("MAIN_INFLUX_ORG")
+    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
+
+    if not main_url or not main_token or not main_org or not main_bucket:
+        print("[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
+        return
+
+    scenario_id = None
+    base_name = os.path.basename(outfile)
+    if base_name.startswith("write-") and base_name.endswith(".json"):
+        scenario_id = base_name[len("write-"):-len(".json")]
+
+    meta = result.get("meta", {})
+    summary = result.get("summary", {})
+    latency_stats = summary.get("latency_stats", {})
+    throughput = summary.get("throughput", {})
+
+    client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
+
+    p = (
+        Point("bddbench_write_result")
+        # tags
+        .tag("source_measurement", str(meta.get("measurement", "")))
+        .tag("compression", str(meta.get("compression", "")))
+        .tag("precision", str(meta.get("precision", "")))
+        .tag("point_complexity", str(meta.get("point_complexity", "")))
+        .tag("time_ordering", str(meta.get("time_ordering", "")))
+        .tag("bucket", str(meta.get("bucket", "")))
+        .tag("org", str(meta.get("org", "")))
+        .tag("scenario_id", scenario_id or "")
+        # fields
+        .field("total_points", int(meta.get("total_points", 0)))
+        .field("total_batches", int(meta.get("total_batches", 0)))
+        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
+        .field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
+        .field("error_rate", float(summary.get("error_rate", 0.0)))
+        .field("errors_count", int(summary.get("errors_count", 0)))
+        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
+        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
+        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
+        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
+    )
+
+    write_api.write(bucket=main_bucket, org=main_org, record=p)
+    client.close()
+
+    print("[write-bench] Exported write result to main Influx")
 
 def _run_writer_worker(
     writer_id: int,
@@ -356,3 +413,5 @@ def step_store_write_result(context, outfile):
 
     print("=== Generic Write Benchmark Result ===")
     print(json.dumps(result, indent=2))
+
+    _export_write_result_to_main_influx(result, outfile)
