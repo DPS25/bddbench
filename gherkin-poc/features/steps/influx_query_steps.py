@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from influxdb_client import InfluxDBClient #py lib
+from influxdb_client.client.write_api import SYNCHRONOUS
 from behave import given, when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -252,6 +253,90 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
         "error_rate": error_rate,
     }
 
+def _export_query_result_to_main_influx(
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    runs: List[QueryRunMetrics],
+    outfile: str,
+) -> None:
+    """
+    Exports a compact summary of the query benchmark to the 'main' InfluxDB.
+
+    Requires MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
+    in the environmnet. If not fully set, the export is skipped
+    """
+    main_url = os.getenv("MAIN_INFLUX_URL")
+    main_token = os.getenv("MAIN_INFLUX_TOKEN")
+    main_org = os.getenv("MAIN_INFLUX_ORG")
+    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
+
+    if not main_url or not main_token or not main_org or not main_bucket:
+        print("[query-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
+        return
+
+    scenario_id = None
+    base_name = os.path.basename(outfile)
+    if base_name.startswith("query-") and base_name.endswith(".json"):
+        scenario_id = base_name[len("query-"):-len(".json")]
+
+    total_runs = len(runs)
+    errors_count = len([r for r in runs if not r.ok])
+    error_rate = float(summary.get("error_rate", 0.0))
+
+    ttf_stats = summary.get("time_to_first_result_s", {}) or {}
+    total_time_stats = summary.get("total_time_s", {}) or {}
+    bytes_stats = summary.get("bytes_returned", {}) or {}
+    rows_stats = summary.get("rows_returned", {}) or {}
+    throughput = summary.get("throughput", {}) or {}
+
+    def _f(d: Dict[str, Any], key: str) -> float:
+        v = d.get(key)
+        return float(v) if v is not None else 0.0
+
+    throughput_bytes_per_s = float(throughput.get("bytes_per_s") or 0.0)
+    throughput_rows_per_s = float(throughput.get("rows_per_s") or 0.0)
+
+    client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
+
+    p = (
+        Point("bddbench_query_result")
+        .tag("source_measurement", str(meta.get("measurement", "")))
+        .tag("time_range", str(meta.get("time_range", "")))
+        .tag("query_type", str(meta.get("query_type", "")))
+        .tag("result_size", str(meta.get("result_size", "")))
+        .tag("output_format", str(meta.get("output_format", "")))
+        .tag("compression", str(meta.get("compression", "")))
+        .tag("bucket", str(meta.get("bucket", "")))
+        .tag("org", str(meta.get("org", "")))
+        .tag("scenario_id", scenario_id or "")
+        .field("total_runs", int(total_runs))
+        .field("errors_count", int(errors_count))
+        .field("error_rate", error_rate)
+        .field("ttf_min_s", _f(ttf_stats, "min"))
+        .field("ttf_max_s", _f(ttf_stats, "max"))
+        .field("ttf_avg_s", _f(ttf_stats, "avg"))
+        .field("ttf_median_s", _f(ttf_stats, "median"))
+        .field("total_time_min_s", _f(total_time_stats, "min"))
+        .field("total_time_max_s", _f(total_time_stats, "max"))
+        .field("total_time_avg_s", _f(total_time_stats, "avg"))
+        .field("total_time_median_s", _f(total_time_stats, "median"))
+        .field("bytes_min", _f(bytes_stats, "min"))
+        .field("bytes_max", _f(bytes_stats, "max"))
+        .field("bytes_avg", _f(bytes_stats, "avg"))
+        .field("bytes_median", _f(bytes_stats, "median"))
+        .field("rows_min", _f(rows_stats, "min"))
+        .field("rows_max", _f(rows_stats, "max"))
+        .field("rows_avg", _f(rows_stats, "avg"))
+        .field("rows_median", _f(rows_stats, "median"))
+        .field("throughput_bytes_per_s", throughput_bytes_per_s)
+        .field("throughput_rows_per_s", throughput_rows_per_s)
+    )
+
+    write_api.write(bucket=main_bucket, org=main_org, record=p)
+    client.close()
+
+    print("[query-bench] Exported query result to main Influx")
 
 # ----------- Scenario Steps -------------
 
@@ -340,3 +425,5 @@ def step_store_query_result(context, outfile):
 
     print("=== Generic Query Benchmark Result ===")
     print(json.dumps(result, indent=2))
+
+    _export_query_result_to_main_influx(meta, summary, runs, outfile)
