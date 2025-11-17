@@ -6,8 +6,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any
 
+from influxdb_client import InfluxDBClient #py lib
 from behave import given, when, then
-import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 @given("a generic InfluxDB v2 endpoint is configured from environment")
@@ -115,18 +115,8 @@ join(
 
     return flux
 
-
-def _infer_accept_header(output_format: str) -> str:
-    if output_format == "csv":
-        return "text/csv"
-    if output_format == "json":
-        return "application/json"
-    if output_format == "arrow":
-        return "application/x-arrow"
-    return "text/csv"
-
-
 def _run_single_query(
+    # Execute a Flux query and collect timing/size metrics
     client_id: int,
     base_url: str,
     token: str,
@@ -135,31 +125,59 @@ def _run_single_query(
     output_format: str,
     compression: str,
 ) -> QueryRunMetrics:
-    url = f"{base_url.rstrip('/')}/api/v2/query"
-
-    headers = {
-        "Authorization": f"Token {token}",
-        "Content-Type": "application/vnd.flux",
-        "Accept": _infer_accept_header(output_format),
-    }
-
-    if compression == "gzip":
-        headers["Accept-Encoding"] = "gzip"
-
-    params = {
-        "org": org,
-    }
+    
+    enable_gzip = compression == "gzip"
 
     t_start = time.perf_counter()
+
     try:
-        resp = requests.post(
-            url,
-            params=params,
-            headers=headers,
-            data=flux.encode("utf-8"),
-            stream=True,
-            timeout=300,
-        )
+        with InfluxDBClient(
+            url=base_url,
+            token=token,
+            org=org,
+            enable_gzip=enable_gzip,
+            timeout=300_000,  # ms
+        ) as client:
+            query_api = client.query_api()
+
+            bytes_returned = 0
+            rows_returned = 0
+            time_to_first: float | None = None
+
+            if output_format == "csv":
+                csv_iter = query_api.query_csv(query=flux, org=org)
+
+                for row in csv_iter:
+                    now = time.perf_counter()
+                    if time_to_first is None:
+                        time_to_first = now - t_start
+
+                    if isinstance(row, str):
+                        line = row
+                    else:
+                        line = ",".join("" if cell is None else str(cell) for cell in row)
+
+                    rows_returned += 1
+                    bytes_returned += len((line + "\n").encode("utf-8"))
+
+            else:
+              
+                tables = query_api.query(query=flux, org=org)
+                for table in tables:
+                    for record in table.records:
+                        now = time.perf_counter()
+                        if time_to_first is None:
+                            time_to_first = now - t_start
+
+                        rows_returned += 1
+                        bytes_returned += len(
+                            json.dumps(
+                                record.values,
+                                separators=(",", ":"),
+                                ensure_ascii=False,
+                            ).encode("utf-8")
+                        ) + 1
+
     except Exception:
         return QueryRunMetrics(
             client_id=client_id,
@@ -171,37 +189,12 @@ def _run_single_query(
             rows_returned=0,
         )
 
-    if resp.status_code >= 400:
-        t_end = time.perf_counter()
-        return QueryRunMetrics(
-            client_id=client_id,
-            status_code=resp.status_code,
-            ok=False,
-            time_to_first_result_s=t_end - t_start,
-            total_time_s=t_end - t_start,
-            bytes_returned=len(resp.content or b""),
-            rows_returned=0,
-        )
-
-    bytes_returned = 0
-    rows_returned = 0
-    time_to_first = None
-
-    for chunk in resp.iter_content(chunk_size=8192):
-        if not chunk:
-            continue
-        now = time.perf_counter()
-        if time_to_first is None:
-            time_to_first = now - t_start
-        bytes_returned += len(chunk)
-
-        rows_returned += chunk.count(b"\n")
-
     t_end = time.perf_counter()
 
     return QueryRunMetrics(
         client_id=client_id,
-        status_code=resp.status_code,
+        # The python client raises on non-2xx; reaching here implies success.
+        status_code=200,
         ok=True,
         time_to_first_result_s=time_to_first,
         total_time_s=t_end - t_start,
