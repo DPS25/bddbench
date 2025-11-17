@@ -1,0 +1,26 @@
+Feature: Basic InfluxDB write and read-back benchmark # features/influx_basic_benchmark.feature:1
+
+  Background:   # features/influx_basic_benchmark.feature:2
+
+  @poc @influx @basic
+  Scenario: write and read back a small batch                    # features/influx_basic_benchmark.feature:7
+    Given an InfluxDB v2 endpoint is configured from environment # features/steps/influx_basic_steps.py:10
+    And a target bucket from environment is available            # features/steps/influx_basic_steps.py:28
+    When I write 10 points with measurement "bddbench_write"     # features/steps/influx_basic_steps.py:36
+    Then I can read back 10 points with the same run id          # features/steps/influx_basic_steps.py:64
+    And the average write latency shall be <= 500 ms             # features/steps/influx_basic_steps.py:82
+
+Feature: InfluxDB v2 write path performance (POC) # features/write_latency.feature:1
+  In order to express performance benchmarks in BDD
+  As the team
+  I want to define a write workload and check basic latency rules
+  Background:   # features/write_latency.feature:6
+
+  @poc @m1 @write
+  Scenario Outline: Write load with basic thresholds -- @1.1                        # features/write_latency.feature:19
+    Given an InfluxDB endpoint is configured                                        # None
+    And a bucket "dsp25" is defined                                                 # None
+    When I write 200 points per second for 5 seconds                                # None
+    Then the median latency shall be <= 50 ms                                       # None
+    And I store the benchmark result as "gherkin-poc/reports/write-latency-p1.json" # None
+

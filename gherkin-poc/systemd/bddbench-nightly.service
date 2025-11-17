@@ -1,0 +1,24 @@
+# ~/.config/systemd/user/bddbench-nightly.service
+[Unit]
+Description=Run nightly BDD benchmark KPI analysis
+
+[Service]
+Type=oneshot
+#User=nixos
+WorkingDirectory=/home/nixos/bddbench/gherkin-poc
+
+EnvironmentFile=/home/nixos/.config/bddbench-nightly.env
+
+# 10 minutes
+#TimeoutSec=600     
+
+
+ExecStart=/run/current-system/sw/bin/nix-shell \
+  -p python3 \
+     python3Packages.pip \
+     python3Packages.numpy \
+     python3Packages.scipy \
+     python3Packages.behave \
+     python3Packages.influxdb-client \
+  --run "./scripts/nightly_run.sh"
+

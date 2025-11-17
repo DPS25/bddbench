@@ -7,7 +7,6 @@ from behave import given, when, then
 
 @given("an InfluxDB endpoint is configured")
 def step_influx_configured(context):
-    # fallback, wenn keine echte URL da ist
     context.influx_url = os.getenv("INFLUX_URL", "http://localhost:8086")
 
 
@@ -22,11 +21,9 @@ def step_write_points(context, points, duration):
     context.duration_seconds = duration
     context.latency_samples = []
 
-    # POC: wir simulieren den Schreibvorgang
     for _ in range(duration):
         start = time.time()
-        # hier könnte später ein echter POST auf Influx rein
-        time.sleep(0.01)  # 10 ms simulierte Latenz
+        time.sleep(0.01)  
         end = time.time()
         latency_ms = (end - start) * 1000
         context.latency_samples.append(latency_ms)

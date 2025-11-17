@@ -1,28 +1,49 @@
 import os, math, csv
+from pathlib import Path
+
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")   
 import matplotlib.pyplot as plt
 from scipy import stats
+from datetime import datetime
+
 
 CSV_PATH   = os.getenv("KPI_CSV", "mock/main_kpis.csv")
 SCENARIO   = os.getenv("KPI_SCENARIO", "write_basic")
-GROUP_TAG  = os.getenv("KPI_GROUP_TAG")      # e.g., "config_id"
-GROUP_VAL  = os.getenv("KPI_GROUP_VAL")      # e.g., "v1" (optional)
-FIELD_NAME = os.getenv("KPI_FIELD", "mean_ms") # e.g., mean_ms or median_ms
+GROUP_TAG  = os.getenv("KPI_GROUP_TAG")           
+GROUP_VAL  = os.getenv("KPI_GROUP_VAL")           
+FIELD_NAME = os.getenv("KPI_FIELD", "mean_ms")    
 TARGET_MS  = float(os.getenv("KPI_TARGET_MS", "15"))
 MEAS       = os.getenv("KPI_MEASUREMENT", "bddbench_summary")
+OUT_DIR    = Path(os.getenv("KPI_PLOT_DIR", "reports/plots"))
+
+
+
 
 def load_values():
     vals = []
     with open(CSV_PATH, encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            if r["_measurement"] != MEAS: continue
-            if r["_field"] != FIELD_NAME: continue
-            if r["scenario"] != SCENARIO: continue
-            if GROUP_TAG and r.get(GROUP_TAG) != GROUP_VAL: continue
+            if r["_measurement"] != MEAS:
+                continue
+            if r["_field"] != FIELD_NAME:
+                continue
+            if r["scenario"] != SCENARIO:
+                continue
+            if GROUP_TAG and r.get(GROUP_TAG) != GROUP_VAL:
+                continue
             vals.append(float(r["_value"]))
     return np.array(vals, dtype=float)
 
+
+def timestamp():
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
 def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
     values = load_values()
     n = len(values)
     if n < 2:
@@ -32,29 +53,40 @@ def main():
     mean_val = float(np.mean(values))
     sd = float(np.std(values, ddof=1))
 
-    # two-sided t-test
-    t_stat, p_two_tailed = stats.ttest_1samp(values, popmean=TARGET_MS, alternative="two-sided")
+    # two-sided t-test (Student t)
+    t_stat, p_two_tailed = stats.ttest_1samp(
+        values, popmean=TARGET_MS, alternative="two-sided"
+    )
 
     alpha = 0.05
     df = n - 1
     se = sd / math.sqrt(n)
-    tcrit = stats.t.ppf(1 - alpha/2, df)
+    tcrit = stats.t.ppf(1 - alpha / 2, df)
     ci_low, ci_high = mean_val - tcrit * se, mean_val + tcrit * se
-
 
     print(f"n={n}, mean={mean_val:.3f} ms, sd={sd:.3f} ms")
     print(f"t={t_stat:.3f}, p(two)={p_two_tailed:.4g}")
     print(f"95% CI: [{ci_low:.3f}, {ci_high:.3f}] ms")
 
-    # histogram
+    # name: scenario + group(optional) + field
+    group_part = f"_{GROUP_TAG}-{GROUP_VAL}" if GROUP_TAG and GROUP_VAL else ""
+    base_name = f"{SCENARIO}{group_part}_{FIELD_NAME}"
+
+    # --- 1) Histogram ---
     plt.figure()
     plt.title(f"Per-run {FIELD_NAME} (ms)")
     plt.hist(values, bins=10)
     plt.xlabel(f"{FIELD_NAME} (ms)")
     plt.ylabel("Count")
-    plt.show()
 
-    # mean + confidence interval (zoom to CI)
+    ts = timestamp()
+    hist_path = OUT_DIR / f"{ts}_{base_name}_hist.png"
+    plt.tight_layout()
+    plt.savefig(hist_path)
+    plt.close()
+    print(f"[single] Saved histogram to: {hist_path}")
+
+    # --- 2) Mean + 95% CI ---
     plt.figure()
     plt.title(f"{FIELD_NAME} with 95% CI")
     plt.errorbar(
@@ -74,7 +106,14 @@ def main():
     plt.xticks([0], [f"{SCENARIO}"])
     plt.ylabel("Latency (ms)")
     plt.grid(True, axis='y', alpha=0.3)
-    plt.show()
+
+    ci_path = OUT_DIR / f"{ts}_{base_name}_ci.png"
+    plt.tight_layout()
+    plt.savefig(ci_path)
+    plt.close()
+    print(f"[single] Saved CI plot to: {ci_path}")
+
 
 if __name__ == "__main__":
     main()
+
