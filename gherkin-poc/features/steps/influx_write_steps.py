@@ -1,4 +1,3 @@
-
 import os
 import time
 import json
@@ -160,8 +159,9 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
         .tag("precision", str(meta.get("precision", "")))
         .tag("point_complexity", str(meta.get("point_complexity", "")))
         .tag("time_ordering", str(meta.get("time_ordering", "")))
-        .tag("bucket", str(meta.get("bucket", "")))
-        .tag("org", str(meta.get("org", "")))
+        .tag("sut_bucket", str(meta.get("bucket", "")))
+        .tag("sut_org", str(meta.get("org", "")))
+        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         # fields
         .field("total_points", int(meta.get("total_points", 0)))
@@ -362,6 +362,7 @@ def step_run_write_benchmark(
         "time_ordering": time_ordering,
         "bucket": bucket,
         "org": org,
+        "sut_url":url,
         "total_batches": total_batches,
         "total_points": total_points,
         "total_duration_s": total_duration_s,
