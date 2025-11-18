@@ -307,8 +307,9 @@ def _export_query_result_to_main_influx(
         .tag("result_size", str(meta.get("result_size", "")))
         .tag("output_format", str(meta.get("output_format", "")))
         .tag("compression", str(meta.get("compression", "")))
-        .tag("bucket", str(meta.get("bucket", "")))
-        .tag("org", str(meta.get("org", "")))
+        .tag("sut_bucket", str(meta.get("bucket", "")))
+        .tag("sut_org", str(meta.get("org", "")))
+        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("total_runs", int(total_runs))
         .field("errors_count", int(errors_count))
@@ -401,6 +402,7 @@ def step_run_query_benchmark(context,
         "compression": compression,
         "bucket": bucket,
         "org": org,
+        "sut_url": base_url,
     }
     context.query_summary = _summarize_query_runs(runs)
 
