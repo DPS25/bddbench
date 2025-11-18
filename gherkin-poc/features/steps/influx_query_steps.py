@@ -6,7 +6,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any
 
-from influxdb_client import InfluxDBClient #py lib
+from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave import given, when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
