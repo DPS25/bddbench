@@ -13,7 +13,7 @@ export ENV_NAME=NAME_OF_YOUR_ENV && nix develop
 Example output:
 
 ```bash
-export ENV_NAME=johann && nix develop
+`export ENV_NAME=johann && nix develop`
 🔐 Loading secrets from /nix/store/j2v44phb5lkpzq9yvyzfxh2yhbvgqx9w-source/secrets
 🔑 Loading main_influx.enc.yaml...
 🔑 Loading sut_influx.enc.yaml...

@@ -1,8 +1,10 @@
 import logging, os
+from types import SimpleNamespace
+from dotenv import load_dotenv
+from pathlib import Path
 
 from behave.model import Feature, Scenario
 from influxdb_client.client.write_api import SYNCHRONOUS
-from systemd.journal import JournalHandler
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 
@@ -13,29 +15,75 @@ def _load_env(context: Context):
     :return:
     """
 
+
+    dotenv_path = Path('../.env')
+    load_dotenv(dotenv_path=dotenv_path)
+
+    context.influxdb = getattr(context, "influxdb", SimpleNamespace())
+    context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
+    context.influxdb.sut = getattr(context.influxdb, "sut", SimpleNamespace())
+    context.influxdb.main.url = None
+    context.influxdb.main.token = None
+    context.influxdb.main.org = None
+    context.influxdb.main.bucket = None
+    context.influxdb.main.client = None
+    context.influxdb.main.write_api = None
+    context.influxdb.main.query_api = None
+    context.influxdb.sut.url = None
+    context.influxdb.sut.token = None
+    context.influxdb.sut.org = None
+    context.influxdb.sut.bucket = None
+    context.influxdb.sut.client = None
+    context.influxdb.sut.write_api = None
+    context.influxdb.sut.query_api = None
+
+
     # ----- main influx DB -----
-    context.config.inlufxdb.main.url = os.getenv("INFLUXDB_MAIN_URL", "http://localhost:8086")
-    context.config.influxdb.main.token = os.getenv("INFLUXDB_MAIN_TOKEN", None)
-    context.config.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
-    context.config.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
+    context.influxdb.main.url = os.getenv("INFLUXDB_MAIN_URL", "http://localhost:8086")
+    context.influxdb.main.token = os.getenv("INFLUXDB_MAIN_TOKEN", None)
+    context.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
+    context.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
 
-    assert context.config.inlufxdb.main.url is not None, "INFLUXDB_MAIN_URL environment variable must be set"
-    assert context.config.influxdb.main.token is not None, "INFLUXDB_MAIN_TOKEN environment variable must be set"
-    assert context.config.influxdb.main.org is not None, "INFLUXDB_MAIN_ORG environment variable must be set"
-    assert context.config.influxdb.main.bucket is not None, "INFLUXDB_MAIN_BUCKET environment variable must be set"
+    assert context.influxdb.main.url is not None, "INFLUXDB_MAIN_URL environment variable must be set"
+    assert context.influxdb.main.token is not None, "INFLUXDB_MAIN_TOKEN environment variable must be set"
+    assert context.influxdb.main.org is not None, "INFLUXDB_MAIN_ORG environment variable must be set"
+    assert context.influxdb.main.bucket is not None, "INFLUXDB_MAIN_BUCKET environment variable must be set"
 
+    context.influxdb.main.client = InfluxDBClient(
+        url=context.influxdb.main.url,
+        token=context.influxdb.main.token,
+        org=context.influxdb.main.org,
+    )
+    if not context.influxdb.main.client.ping():
+        logging.getLogger("file_handler").error("Cannot reach main InfluxDB endpoint")
+        exit(1)
+
+    logging.getLogger("file_handler").info("successfully connected to main InfluxDB endpoint")
+
+    context.influxdb.main.write_api = context.influxdb.main.client.write_api(write_options=SYNCHRONOUS)
+    context.influxdb.main.query_api = context.influxdb.main.client.query_api()
     # ----- SUT influx DB -----
-    context.config.influxdb.sut.url = os.getenv("INFLUXDB_SUT_URL", "http://localhost:8086")
-    context.config.influxdb.sut.token = os.getenv("INFLUXDB_SUT_TOKEN", None)
-    context.config.influxdb.sut.org = os.getenv("INFLUXDB_SUT_ORG", None)
-    context.config.influxdb.sut.bucket = os.getenv("INFLUXDB_SUT_BUCKET", None)
+    context.influxdb.sut.url = os.getenv("INFLUXDB_SUT_URL", "http://localhost:8086")
+    context.influxdb.sut.token = os.getenv("INFLUXDB_SUT_TOKEN", None)
+    context.influxdb.sut.org = os.getenv("INFLUXDB_SUT_ORG", None)
+    context.influxdb.sut.bucket = os.getenv("INFLUXDB_SUT_BUCKET", None)
+    context.influxdb.sut.client = InfluxDBClient(
+        url=context.influxdb.sut.url,
+        token=context.influxdb.sut.token,
+        org=context.influxdb.sut.org,
+    )
+    assert context.influxdb.sut.url is not None, "INFLUXDB_SUT_URL environment variable must be set"
+    assert context.influxdb.sut.token is not None, "INFLUXDB_SUT_TOKEN environment variable must be set"
+    assert context.influxdb.sut.org is not None, "INFLUXDB_SUT_ORG environment variable must be set"
+    assert context.influxdb.sut.bucket is not None, "INFLUXDB_SUT_BUCKET environment variable must be set"
 
-    assert context.config.influxdb.sut.url is not None, "INFLUXDB_SUT_URL environment variable must be set"
-    assert context.config.influxdb.sut.token is not None, "INFLUXDB_SUT_TOKEN environment variable must be set"
-    assert context.config.influxdb.sut.org is not None, "INFLUXDB_SUT_ORG environment variable must be set"
-    assert context.config.influxdb.sut.bucket is not None, "INFLUXDB_SUT_BUCKET environment variable must be set"
+    if not context.influxdb.sut.client.ping():
+        logging.getLogger("bddbench").error("Cannot reach SUT InfluxDB endpoint")
+        exit(1)
+    logging.getLogger("bddbench").info("successfully connected to SUT InfluxDB endpoint")
 
-
+    context.influxdb.sut.write_api = context.influxdb.sut.client.write_api(write_options=SYNCHRONOUS)
+    context.influxdb.sut.query_api = context.influxdb.sut.client.query_api()
 
 def _setup_logging(context: Context):
     """
@@ -46,7 +94,7 @@ def _setup_logging(context: Context):
     root = logging.getLogger()
     context.config.logging_level = context.config.logging_level or logging.DEBUG
     context.config.logging_format = context.config.logging_format or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    context.config.logfile = context.config.logfile or "../reports/behave.log"
+    context.config.logfile = context.config.userdata.get("logfile", None) or "../reports/behave.log"
     context.config.logdir = os.path.dirname(os.path.abspath(context.config.logfile)) or os.getcwd()
     try:
         os.makedirs(context.config.logdir, exist_ok=True)
@@ -56,26 +104,12 @@ def _setup_logging(context: Context):
 
     root.setLevel(context.config.logging_level)
     formatter = logging.Formatter(context.config.logging_format)
-
-
-    try:
-        jh = JournalHandler()
-        jh.setLevel(context.config.logging_level or logging.DEBUG)
-        jh.setFormatter(formatter)
-        jh.set_name("bdd_journal")
-        root.addHandler(jh)
-    except Exception:
-        if not root.handlers:
-            logging.basicConfig(level=context.logging_level,
-                                format=context.config.logging_format,
-                                filename=context.config.logfile)
-        else:
-            # attach a file handler explicitly if needed
-            fh = logging.FileHandler(context.config.logfile)
-            fh.setLevel(context.logging_level)
-            fh.setFormatter(formatter)
-            root.addHandler(fh)
-
+    # File handler
+    file_handler = logging.FileHandler(context.config.logfile)
+    file_handler.setLevel(context.config.logging_level)
+    file_handler.setFormatter(formatter)
+    file_handler.set_name("bddbench")
+    root.addHandler(file_handler)
 
 def before_all(context: Context):
     """
@@ -83,6 +117,7 @@ def before_all(context: Context):
     :param context:
     :return:
     """
+
     _setup_logging(context)
     _load_env(context)
 def before_feature(context: Context, feature: Feature):
@@ -92,7 +127,7 @@ def before_feature(context: Context, feature: Feature):
     :param feature:
     :return:
     """
-    logging.getLogger("bdd_journal").debug(f"=== starting feature: {feature.name} ===")
+    logging.getLogger("bddbench").debug(f"=== starting feature: {feature.name} ===")
 
 def after_feature(context: Context, feature: Feature):
     """
@@ -101,7 +136,7 @@ def after_feature(context: Context, feature: Feature):
     :param feature:
     :return:
     """
-    logging.getLogger("bdd_journal").debug(f"=== finished feature: {feature.name} -> {feature.status.name} ===")
+    logging.getLogger("bddbench").debug(f"=== finished feature: {feature.name} -> {feature.status.name} ===")
 
 def before_scenario(context: Context, scenario: Scenario):
     """
@@ -110,7 +145,7 @@ def before_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
-    logging.getLogger("bdd_journal").debug(f"-- starting scenario: {scenario.name}")
+    logging.getLogger("bddbench").debug(f"-- starting scenario: {scenario.name}")
 
 def after_scenario(context: Context, scenario: Scenario):
     """
@@ -119,4 +154,4 @@ def after_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
-    logging.getLogger("bdd_journal").debug(f"-- finished scenario: {scenario.name} -> {scenario.status.name}")
+    logging.getLogger("bddbench").debug(f"-- finished scenario: {scenario.name} -> {scenario.status.name}")
