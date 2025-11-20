@@ -18,21 +18,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------- Background-Steps (from environment) ----------
 
+
 @given("a SUT InfluxDB v2 endpoint is configured and reachable")
 def step_bucket_from_env(context: Context):
-    if not context.sut_influx.client.ping():
+    if not context.influxdb.sut.client.ping():
         logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
 
+
 @given("the target bucket '{bucket}' from environment is available")
 def step_target_bucket_available(context: Context, bucket: str) -> None:
-    assert context.sut_influx.bucket is not None, "SUT InfluxDB bucket is not configured"
-    bucket_api = context.sut_influx.client.buckets_api()
+    assert context.influxdb.sut.bucket is not None, (
+        "SUT InfluxDB bucket is not configured"
+    )
+    bucket_api = context.influxdb.sut.client.buckets_api()
     bucket_response = bucket_api.find_bucket_by_name(bucket)
-    assert bucket_response is not None, f"SUT InfluxDB bucket '{bucket}' is not available"
+    assert bucket_response is not None, (
+        f"SUT InfluxDB bucket '{bucket}' is not available"
+    )
 
 
 # ----------- Datatype ------------
+
 
 @dataclass
 class BatchWriteMetrics:
@@ -44,6 +51,7 @@ class BatchWriteMetrics:
 
 
 # ---------- Helpers ----------
+
 
 def _precision_from_str(p: str) -> WritePrecision:
     p = p.lower()
@@ -87,16 +95,11 @@ def _build_point(
 
     p = Point(measurement).tag("device_id", f"dev-{device_id}")
 
-    p = (
-        p
-        .field("value", float(idx))
-        .field("seq", idx)
-    )
+    p = p.field("value", float(idx)).field("seq", idx)
 
     if point_complexity == "high":
         p = (
-            p
-            .field("aux1", float(idx % 100))
+            p.field("aux1", float(idx % 100))
             .field("aux2", math.sin(idx))
             .field("aux3", math.cos(idx))
         )
@@ -106,8 +109,11 @@ def _build_point(
 
 
 def _maybe_cleanup_before_run(context, measurement: str):
-   # cleanup logic not implemented
-    print(f"[write-bench] NOTE: cleanup for measurement={measurement} is not implemented here.")
+    # cleanup logic not implemented
+    print(
+        f"[write-bench] NOTE: cleanup for measurement={measurement} is not implemented here."
+    )
+
 
 def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
     """
@@ -122,13 +128,15 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        print("[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
+        print(
+            "[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
+        )
         return
 
     scenario_id = None
     base_name = os.path.basename(outfile)
     if base_name.startswith("write-") and base_name.endswith(".json"):
-        scenario_id = base_name[len("write-"):-len(".json")]
+        scenario_id = base_name[len("write-") : -len(".json")]
 
     meta = result.get("meta", {})
     summary = result.get("summary", {})
@@ -167,6 +175,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     client.close()
 
     print("[write-bench] Exported write result to main Influx")
+
 
 def _run_writer_worker(
     writer_id: int,
@@ -242,9 +251,10 @@ def _run_writer_worker(
 
 # ---------- Scenario-Step ----------
 
+
 @when(
     'I run a generic write benchmark on measurement "{measurement}" '
-    'with batch size {batch_size:d}, {parallel_writers:d} parallel writers, '
+    "with batch size {batch_size:d}, {parallel_writers:d} parallel writers, "
     'compression "{compression}", timestamp precision "{precision}", '
     'point complexity "{point_complexity}", tag cardinality {tag_cardinality:d} '
     'and time ordering "{time_ordering}" for {batches:d} batches'
@@ -285,7 +295,9 @@ def step_run_write_benchmark(
     bucket = context.config.influxdb.sut.bucket
 
     if not url or not token or not org or not bucket:
-        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET must be set")
+        raise RuntimeError(
+            "INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET must be set"
+        )
 
     precision_enum = _precision_from_str(precision)
 
@@ -344,7 +356,7 @@ def step_run_write_benchmark(
         "time_ordering": time_ordering,
         "bucket": bucket,
         "org": org,
-        "sut_url":url,
+        "sut_url": url,
         "total_batches": total_batches,
         "total_points": total_points,
         "total_duration_s": total_duration_s,
@@ -375,6 +387,7 @@ def step_run_write_benchmark(
 
 
 # ---------- write result ----------
+
 
 @then('I store the generic write benchmark result as "{outfile}"')
 def step_store_write_result(context, outfile):

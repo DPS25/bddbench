@@ -3,10 +3,12 @@ from pydantic import Field
 from influxdb_client import Point
 from measurements.BasePoint import BasePoint
 
+
 class WritePerformancePoint(BasePoint):
     """
     Write performance metrics.
     """
+
     # Write metrics
     write_throughput: Optional[float] = Field(None, gt=0)  # points/sec
     write_latency_avg_ms: Optional[float] = Field(None, gt=0)

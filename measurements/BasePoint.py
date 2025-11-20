@@ -8,6 +8,7 @@ class BasePoint(BaseModel):
     Base point for all benchmark metrics.
     Contains common tags for all measurements.
     """
+
     run_uuid: str
     feature_name: str
     sut: str
@@ -28,4 +29,3 @@ class BasePoint(BaseModel):
             .time(self.time, WritePrecision.NS)
         )
         return point
-

@@ -3,10 +3,12 @@ from pydantic import Field
 from influxdb_client import Point
 from measurements.BasePoint import BasePoint
 
+
 class QueryPerformancePoint(BasePoint):
     """
     Query performance metrics.
     """
+
     # Query metrics
     query_throughput: Optional[float] = Field(None, gt=0)  # queries/sec
     query_latency_avg_ms: Optional[float] = Field(None, gt=0)

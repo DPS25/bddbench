@@ -16,20 +16,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 @given("a SUT InfluxDB v2 endpoint is configured and reachable")
 def step_bucket_from_env(context: Context):
-    if not context.sut_influx.client.ping():
+    if not context.influxdb.sut.client.ping():
         logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
 
 
 @given("the target bucket '{bucket}' from environment is available")
 def step_target_bucket_available(context: Context, bucket: str) -> None:
-    assert context.sut_influx.bucket is not None, "SUT InfluxDB bucket is not configured"
-    bucket_api = context.sut_influx.client.buckets_api()
+    assert context.influxdb.sut.bucket is not None, (
+        "SUT InfluxDB bucket is not configured"
+    )
+    bucket_api = context.influxdb.sut.client.buckets_api()
     bucket_response = bucket_api.find_bucket_by_name(bucket)
-    assert bucket_response is not None, f"SUT InfluxDB bucket '{bucket}' is not available"
+    assert bucket_response is not None, (
+        f"SUT InfluxDB bucket '{bucket}' is not available"
+    )
 
 
 # ---------- Datatypes -----------
+
 
 @dataclass
 class QueryRunMetrics:
@@ -44,11 +49,10 @@ class QueryRunMetrics:
 
 # ---------- Helpers ----------
 
-def _build_flux_query(bucket: str,
-                      measurement: str,
-                      time_range: str,
-                      query_type: str,
-                      result_size: str) -> str:
+
+def _build_flux_query(
+    bucket: str, measurement: str, time_range: str, query_type: str, result_size: str
+) -> str:
     """
     BUilds a simple Flux-Query depending on query_type and result_size
 
@@ -111,14 +115,14 @@ join(
 
 
 def _run_single_query(
-        # Execute a Flux query and collect timing/size metrics
-        client_id: int,
-        base_url: str,
-        token: str,
-        org: str,
-        flux: str,
-        output_format: str,
-        compression: str,
+    # Execute a Flux query and collect timing/size metrics
+    client_id: int,
+    base_url: str,
+    token: str,
+    org: str,
+    flux: str,
+    output_format: str,
+    compression: str,
 ) -> QueryRunMetrics:
     enable_gzip = compression == "gzip"
 
@@ -126,11 +130,11 @@ def _run_single_query(
 
     try:
         with InfluxDBClient(
-                url=base_url,
-                token=token,
-                org=org,
-                enable_gzip=enable_gzip,
-                timeout=300_000,  # ms
+            url=base_url,
+            token=token,
+            org=org,
+            enable_gzip=enable_gzip,
+            timeout=300_000,  # ms
         ) as client:
             query_api = client.query_api()
 
@@ -149,13 +153,14 @@ def _run_single_query(
                     if isinstance(row, str):
                         line = row
                     else:
-                        line = ",".join("" if cell is None else str(cell) for cell in row)
+                        line = ",".join(
+                            "" if cell is None else str(cell) for cell in row
+                        )
 
                     rows_returned += 1
                     bytes_returned += len((line + "\n").encode("utf-8"))
 
             else:
-
                 tables = query_api.query(query=flux, org=org)
                 for table in tables:
                     for record in table.records:
@@ -164,13 +169,16 @@ def _run_single_query(
                             time_to_first = now - t_start
 
                         rows_returned += 1
-                        bytes_returned += len(
-                            json.dumps(
-                                record.values,
-                                separators=(",", ":"),
-                                ensure_ascii=False,
-                            ).encode("utf-8")
-                        ) + 1
+                        bytes_returned += (
+                            len(
+                                json.dumps(
+                                    record.values,
+                                    separators=(",", ":"),
+                                    ensure_ascii=False,
+                                ).encode("utf-8")
+                            )
+                            + 1
+                        )
 
     except Exception:
         return QueryRunMetrics(
@@ -210,10 +218,7 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
     bytes_vals = safe_vals("bytes_returned")
     rows_vals = safe_vals("rows_returned")
 
-    error_rate = (
-        len([r for r in runs if not r.ok]) / len(runs)
-        if runs else 0.0
-    )
+    error_rate = len([r for r in runs if not r.ok]) / len(runs) if runs else 0.0
 
     def agg(vals):
         if not vals:
@@ -248,11 +253,11 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
 
 
 def _export_query_result_to_main_influx(
-        meta: Dict[str, Any],
-        summary: Dict[str, Any],
-        runs: List[QueryRunMetrics],
-        outfile: str,
-        context: Context,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    runs: List[QueryRunMetrics],
+    outfile: str,
+    context: Context,
 ) -> None:
     """
     Exports a compact summary of the query benchmark to the 'main' InfluxDB.
@@ -266,13 +271,15 @@ def _export_query_result_to_main_influx(
     main_bucket = context.config.influx.main.bucket
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        print("[query-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
+        print(
+            "[query-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
+        )
         return
 
     scenario_id = None
     base_name = os.path.basename(outfile)
     if base_name.startswith("query-") and base_name.endswith(".json"):
-        scenario_id = base_name[len("query-"):-len(".json")]
+        scenario_id = base_name[len("query-") : -len(".json")]
 
     total_runs = len(runs)
     errors_count = len([r for r in runs if not r.ok])
@@ -337,20 +344,23 @@ def _export_query_result_to_main_influx(
 
 # ----------- Scenario Steps -------------
 
+
 @when(
     'I run a generic query benchmark on measurement "{measurement}" '
     'with time range "{time_range}" using query type "{query_type}" '
     'and result size "{result_size}" with {concurrent_clients:d} concurrent clients, '
     'output format "{output_format}" and compression "{compression}"'
 )
-def step_run_query_benchmark(context,
-                             measurement,
-                             time_range,
-                             query_type,
-                             result_size,
-                             concurrent_clients,
-                             output_format,
-                             compression):
+def step_run_query_benchmark(
+    context,
+    measurement,
+    time_range,
+    query_type,
+    result_size,
+    concurrent_clients,
+    output_format,
+    compression,
+):
     """
     runs the same Flux-Query n times parallel from (concurrent_clients) and measures:
       - time_to_first_result
@@ -359,7 +369,13 @@ def step_run_query_benchmark(context,
       - error_rate
     """
 
-    flux = _build_flux_query(context.config.influx_sut.bucket, measurement, time_range, query_type, result_size)
+    flux = _build_flux_query(
+        context.config.influx_sut.bucket,
+        measurement,
+        time_range,
+        query_type,
+        result_size,
+    )
 
     runs: List[QueryRunMetrics] = []
     with ThreadPoolExecutor(max_workers=concurrent_clients) as executor:
@@ -391,7 +407,7 @@ def step_run_query_benchmark(context,
         "compression": compression,
         "bucket": context.config.influx_sut.bucket,
         "org": context.config.influx_sut.org,
-        "sut_url": context.config.influx_sut.url
+        "sut_url": context.config.influx_sut.url,
     }
     context.query_summary = _summarize_query_runs(runs)
 
@@ -414,6 +430,8 @@ def step_store_query_result(context, outfile):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    logging.getLogger("bddbench").info(f"Stored generic query benchmark result to {outfile}")
+    logging.getLogger("bddbench").info(
+        f"Stored generic query benchmark result to {outfile}"
+    )
 
     _export_query_result_to_main_influx(meta, summary, runs, outfile, context)
