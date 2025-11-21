@@ -60,3 +60,10 @@ uv add PACKAGE_NAME
 ```
 
 * `uv` is like `pip` but faster and better
+
+## Get Debug Info
+If you encounter issues while executing, you can gather debug information by running:
+
+```bash
+tail -f reports/behave.log
+```
