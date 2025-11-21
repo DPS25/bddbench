@@ -1,3 +1,4 @@
+
 Feature: InfluxDB v2 query benchmark (/api/v2/query)
   In order to evaluate query performance characteristics 
   As a test engineer
@@ -5,7 +6,7 @@ Feature: InfluxDB v2 query benchmark (/api/v2/query)
 
   Background:
     Given a SUT InfluxDB v2 endpoint is configured and reachable
-    And the target bucket '<string>' from environment is available
+    And the target bucket from the SUT config is available
 
   @influx @query
   Scenario Outline: generic query benchmark run

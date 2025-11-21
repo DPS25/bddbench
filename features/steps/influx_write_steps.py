@@ -15,27 +15,28 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+logger = logging.getLogger(f"bddbench.influx_write_steps")
 
 # ---------- Background-Steps (from environment) ----------
 
 
-@given("a SUT InfluxDB v2 endpoint is configured and reachable")
-def step_bucket_from_env(context: Context):
-    if not context.influxdb.sut.client.ping():
-        logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
-        raise RuntimeError("SUT InfluxDB endpoint is not reachable")
-
-
-@given("the target bucket '{bucket}' from environment is available")
-def step_target_bucket_available(context: Context, bucket: str) -> None:
-    assert context.influxdb.sut.bucket is not None, (
-        "SUT InfluxDB bucket is not configured"
-    )
-    bucket_api = context.influxdb.sut.client.buckets_api()
-    bucket_response = bucket_api.find_bucket_by_name(bucket)
-    assert bucket_response is not None, (
-        f"SUT InfluxDB bucket '{bucket}' is not available"
-    )
+# @given("a SUT InfluxDB v2 endpoint is configured and reachable")
+# def step_bucket_from_env(context: Context):
+#     if not context.influxdb.sut.client.ping():
+#         logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
+#         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
+#
+#
+# @given("the target bucket '{bucket}' from environment is available")
+# def step_target_bucket_available(context: Context, bucket: str) -> None:
+#     assert context.influxdb.sut.bucket is not None, (
+#         "SUT InfluxDB bucket is not configured"
+#     )
+#     bucket_api = context.influxdb.sut.client.buckets_api()
+#     bucket_response = bucket_api.find_bucket_by_name(bucket)
+#     assert bucket_response is not None, (
+#         f"SUT InfluxDB bucket '{bucket}' is not available"
+#     )
 
 
 # ----------- Datatype ------------
@@ -289,10 +290,10 @@ def step_run_write_benchmark(
       - Throughput (points/s)
       - Error-Rate
     """
-    url = context.config.influxdb.sut.url
-    token = context.config.influxdb.sut.token
-    org = context.config.influxdb.sut.org
-    bucket = context.config.influxdb.sut.bucket
+    url = context.influxdb.sut.url
+    token = context.influxdb.sut.token
+    org = context.influxdb.sut.org
+    bucket = context.influxdb.sut.bucket
 
     if not url or not token or not org or not bucket:
         raise RuntimeError(
@@ -303,7 +304,7 @@ def step_run_write_benchmark(
 
     _maybe_cleanup_before_run(context, measurement)
 
-    client = context.config.influxdb.sut.client
+    client = context.influxdb.sut.client
 
     total_batches = parallel_writers * batches
     total_points = total_batches * batch_size

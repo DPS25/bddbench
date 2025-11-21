@@ -8,6 +8,9 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 
+from src.formatter.AnsiColorFormatter import AnsiColorFormatter
+
+logger = logging.getLogger("bddbench.environment")
 
 def _load_env(context: Context):
     """
@@ -16,7 +19,8 @@ def _load_env(context: Context):
     :return:
     """
 
-    dotenv_path = Path("../.env")
+    dotenv_path = Path(".env")
+    logger.debug(f"Loading environment from {dotenv_path}")
     load_dotenv(dotenv_path=dotenv_path)
 
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
@@ -43,18 +47,22 @@ def _load_env(context: Context):
     context.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
     context.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
 
-    assert context.influxdb.main.url is not None, (
-        "INFLUXDB_MAIN_URL environment variable must be set"
-    )
-    assert context.influxdb.main.token is not None, (
-        "INFLUXDB_MAIN_TOKEN environment variable must be set"
-    )
-    assert context.influxdb.main.org is not None, (
-        "INFLUXDB_MAIN_ORG environment variable must be set"
-    )
-    assert context.influxdb.main.bucket is not None, (
-        "INFLUXDB_MAIN_BUCKET environment variable must be set"
-    )
+    if context.influxdb.main.url is None:
+        text = "INFLUXDB_MAIN_URL environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.main.token is None:
+        text = "INFLUXDB_MAIN_TOKEN environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.main.org is None:
+        text = "INFLUXDB_MAIN_ORG environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.main.bucket is None:
+        text = "INFLUXDB_MAIN_BUCKET environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
 
     context.influxdb.main.client = InfluxDBClient(
         url=context.influxdb.main.url,
@@ -62,10 +70,10 @@ def _load_env(context: Context):
         org=context.influxdb.main.org,
     )
     if not context.influxdb.main.client.ping():
-        logging.getLogger("file_handler").error("Cannot reach main InfluxDB endpoint")
+        logger.error("Cannot reach main InfluxDB endpoint")
         exit(1)
 
-    logging.getLogger("file_handler").info(
+    logger.info(
         "successfully connected to main InfluxDB endpoint"
     )
 
@@ -78,28 +86,34 @@ def _load_env(context: Context):
     context.influxdb.sut.token = os.getenv("INFLUXDB_SUT_TOKEN", None)
     context.influxdb.sut.org = os.getenv("INFLUXDB_SUT_ORG", None)
     context.influxdb.sut.bucket = os.getenv("INFLUXDB_SUT_BUCKET", None)
+
+    if context.influxdb.sut.url is None:
+        text = "INFLUXDB_SUT_URL environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.sut.token is None:
+        text = "INFLUXDB_SUT_TOKEN environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.sut.org is None:
+        text = "INFLUXDB_SUT_ORG environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+    if context.influxdb.sut.bucket is None:
+        text = "INFLUXDB_SUT_BUCKET environment variable must be set"
+        logger.error(text)
+        raise AssertionError(text)
+
+
     context.influxdb.sut.client = InfluxDBClient(
         url=context.influxdb.sut.url,
         token=context.influxdb.sut.token,
         org=context.influxdb.sut.org,
     )
-    assert context.influxdb.sut.url is not None, (
-        "INFLUXDB_SUT_URL environment variable must be set"
-    )
-    assert context.influxdb.sut.token is not None, (
-        "INFLUXDB_SUT_TOKEN environment variable must be set"
-    )
-    assert context.influxdb.sut.org is not None, (
-        "INFLUXDB_SUT_ORG environment variable must be set"
-    )
-    assert context.influxdb.sut.bucket is not None, (
-        "INFLUXDB_SUT_BUCKET environment variable must be set"
-    )
-
     if not context.influxdb.sut.client.ping():
-        logging.getLogger("bddbench").error("Cannot reach SUT InfluxDB endpoint")
+        logger.error("Cannot reach SUT InfluxDB endpoint")
         exit(1)
-    logging.getLogger("bddbench").info(
+    logger.info(
         "successfully connected to SUT InfluxDB endpoint"
     )
 
@@ -115,14 +129,10 @@ def _setup_logging(context: Context):
     :param context:
     :return:
     """
-    root = logging.getLogger()
+    root = logging.getLogger("bddbench")
     context.config.logging_level = context.config.logging_level or logging.DEBUG
-    context.config.logging_format = (
-        context.config.logging_format
-        or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
     context.config.logfile = (
-        context.config.userdata.get("logfile", None) or "../reports/behave.log"
+        context.config.userdata.get("logfile", None) or "reports/behave.log"
     )
     context.config.logdir = (
         os.path.dirname(os.path.abspath(context.config.logfile)) or os.getcwd()
@@ -134,12 +144,10 @@ def _setup_logging(context: Context):
         pass
 
     root.setLevel(context.config.logging_level)
-    formatter = logging.Formatter(context.config.logging_format)
-    # File handler
+    formatter = AnsiColorFormatter('%(asctime)s | %(name)s | %(levelname)8s | %(message)s')
     file_handler = logging.FileHandler(context.config.logfile)
     file_handler.setLevel(context.config.logging_level)
     file_handler.setFormatter(formatter)
-    file_handler.set_name("bddbench")
     root.addHandler(file_handler)
 
 
@@ -151,6 +159,8 @@ def before_all(context: Context):
     """
 
     _setup_logging(context)
+    logger.info("------------------------------------------------")
+    logger.info("Starting BDD tests...")
     _load_env(context)
 
 
@@ -161,7 +171,7 @@ def before_feature(context: Context, feature: Feature):
     :param feature:
     :return:
     """
-    logging.getLogger("bddbench").debug(f"=== starting feature: {feature.name} ===")
+    logger.debug(f"=== starting feature: {feature.name} ===")
 
 
 def after_feature(context: Context, feature: Feature):
@@ -171,7 +181,7 @@ def after_feature(context: Context, feature: Feature):
     :param feature:
     :return:
     """
-    logging.getLogger("bddbench").debug(
+    logger.debug(
         f"=== finished feature: {feature.name} -> {feature.status.name} ==="
     )
 
@@ -183,7 +193,7 @@ def before_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
-    logging.getLogger("bddbench").debug(f"-- starting scenario: {scenario.name}")
+    logger.debug(f"-- starting scenario: {scenario.name}")
 
 
 def after_scenario(context: Context, scenario: Scenario):
@@ -193,6 +203,6 @@ def after_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
-    logging.getLogger("bddbench").debug(
+    logger.debug(
         f"-- finished scenario: {scenario.name} -> {scenario.status.name}"
     )

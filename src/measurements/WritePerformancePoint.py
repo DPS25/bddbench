@@ -1,7 +1,7 @@
 from typing import Optional, Dict
 from pydantic import Field
 from influxdb_client import Point
-from measurements.BasePoint import BasePoint
+from src.measurements.BasePoint import BasePoint
 
 
 class WritePerformancePoint(BasePoint):

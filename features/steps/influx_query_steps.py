@@ -13,6 +13,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from behave import given, when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+logger = logging.getLogger(f"bddbench.influx_query_steps")
 
 @given("a SUT InfluxDB v2 endpoint is configured and reachable")
 def step_bucket_from_env(context: Context):
@@ -21,15 +22,15 @@ def step_bucket_from_env(context: Context):
         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
 
 
-@given("the target bucket '{bucket}' from environment is available")
-def step_target_bucket_available(context: Context, bucket: str) -> None:
+@given('the target bucket from the SUT config is available')
+def step_target_bucket_available(context: Context) -> None:
     assert context.influxdb.sut.bucket is not None, (
         "SUT InfluxDB bucket is not configured"
     )
     bucket_api = context.influxdb.sut.client.buckets_api()
-    bucket_response = bucket_api.find_bucket_by_name(bucket)
+    bucket_response = bucket_api.find_bucket_by_name(context.influxdb.sut.bucket)
     assert bucket_response is not None, (
-        f"SUT InfluxDB bucket '{bucket}' is not available"
+        f"SUT InfluxDB bucket '{context.influxdb.sut.bucket}' is not available"
     )
 
 
@@ -265,10 +266,10 @@ def _export_query_result_to_main_influx(
     Requires MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
     in the environmnet. If not fully set, the export is skipped
     """
-    main_url = context.config.influx.main.url
-    main_token = context.config.influx.main.token
-    main_org = context.config.influx.main.org
-    main_bucket = context.config.influx.main.bucket
+    main_url = context.influxdb.main.url
+    main_token = context.influxdb.main.token
+    main_org = context.influxdb.main.org
+    main_bucket = context.influxdb.main.bucket
 
     if not main_url or not main_token or not main_org or not main_bucket:
         print(
@@ -339,7 +340,7 @@ def _export_query_result_to_main_influx(
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    logging.getLogger("bddbench").info("Exported query result to main Influx")
+    logger.info("Exported query result to main Influx")
 
 
 # ----------- Scenario Steps -------------
@@ -370,7 +371,7 @@ def step_run_query_benchmark(
     """
 
     flux = _build_flux_query(
-        context.config.influx_sut.bucket,
+        context.influxdb.sut.bucket,
         measurement,
         time_range,
         query_type,
@@ -383,9 +384,9 @@ def step_run_query_benchmark(
             executor.submit(
                 _run_single_query,
                 client_id=i,
-                base_url=context.config.influx_sut.url,
-                token=context.config.influx_sut.token,
-                org=context.config.influx_sut.org,
+                base_url=context.influxdb.sut.url,
+                token=context.influxdb.sut.token,
+                org=context.influxdb.sut.org,
                 flux=flux,
                 output_format=output_format,
                 compression=compression,
@@ -405,9 +406,9 @@ def step_run_query_benchmark(
         "concurrent_clients": concurrent_clients,
         "output_format": output_format,
         "compression": compression,
-        "bucket": context.config.influx_sut.bucket,
-        "org": context.config.influx_sut.org,
-        "sut_url": context.config.influx_sut.url,
+        "bucket": context.influxdb.sut.bucket,
+        "org": context.influxdb.sut.org,
+        "sut_url": context.influxdb.sut.url,
     }
     context.query_summary = _summarize_query_runs(runs)
 
@@ -430,7 +431,7 @@ def step_store_query_result(context, outfile):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    logging.getLogger("bddbench").info(
+    logger.info(
         f"Stored generic query benchmark result to {outfile}"
     )
 

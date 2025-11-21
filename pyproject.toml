@@ -19,3 +19,9 @@ dependencies = [
 dev = [
     "ruff>=0.14.5",
 ]
+
+[tool.ruff.lint]
+
+select = ["ANN"]
+ignore = []
+
