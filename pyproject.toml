@@ -1,0 +1,27 @@
+[project]
+name = "dps25bddbench"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "behave>=1.3.3",
+    "dotenv>=0.9.9",
+    "influxdb-client>=1.49.0",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "pydantic>=2.12.4",
+    "scipy>=1.16.3",
+    "systemd-python>=235",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.5",
+]
+
+[tool.ruff.lint]
+
+select = ["ANN"]
+ignore = []
+
