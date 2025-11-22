@@ -8,34 +8,8 @@ from typing import List, Dict, Any
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from behave import given, when, then
+from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-@given("a generic InfluxDB v2 endpoint is configured from environment")
-def step_generic_endpoint_from_env(context):
-    """
-    Reads INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG from the environment and saves them in the context.
-    """
-    url = os.getenv("INFLUX_URL")
-    token = os.getenv("INFLUX_TOKEN")
-    org = os.getenv("INFLUX_ORG")
-
-    if not url or not token or not org:
-        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG must be set in environment")
-
-    context.influx_url = url
-    context.influx_token = token
-    context.influx_org = org
-
-@given("a generic target bucket from environment is available")
-def step_generic_bucket_from_env(context):
-    """
-    Reads INFLUX_BUCKET and saves in context.
-    """
-    bucket = os.getenv("INFLUX_BUCKET")
-    if not bucket:
-        raise RuntimeError("INFLUX_BUCKET must be set in environment")
-    context.influx_bucket = bucket
 
 # ---------- Datatypes -----------
 
