@@ -1,0 +1,31 @@
+Description
+
+Add small Python scripts that benchmark InfluxDB admin endpoints and write KPIs to a common measurement influx_admin_kpi in bucket dsp25 for:
+
+/health (health under sustained load)
+
+/api/v2/delete (delete latency for different time ranges)
+
+/api/v2/users (user-management performance: bulk create/list/delete)
+
+Motivation / Use Case
+
+We want a reproducible way to measure how Influx behaves under real operational workloads (health checks, deletes, user management), detect regressions after upgrades/config changes, and visualize these admin KPIs together with our existing write/query KPIs.
+
+Proposed Solution
+
+Keep three scripts under gherkin-poc/scripts/:
+
+benchmark_health.py – load test /health.
+
+benchmark_delete.py – benchmark /api/v2/delete for a given range/predicate.
+
+benchmark_user_mgmt.py – benchmark bulk /api/v2/users operations.
+
+Each script reads Influx env vars, prints a short summary, and writes exactly one KPI point to influx_admin_kpi with tags like endpoint, scenario, env, host.
+
+Additional Context
+
+/health and /api/v2/delete benchmarks already run successfully on dsp25-wangdong and produce sensible KPIs.
+
+The user-management benchmark works technically, but with the current dev token all POST /api/v2/users calls return 401 (write:users is unauthorized). To get real user-management numbers we will need a token with write:users permissions on a test org/instance.
