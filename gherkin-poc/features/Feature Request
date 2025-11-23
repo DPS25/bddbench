@@ -28,4 +28,4 @@ Additional Context
 
 /health and /api/v2/delete benchmarks already run successfully on dsp25-wangdong and produce sensible KPIs.
 
-The user-management benchmark works technically, but with the current dev token all POST /api/v2/users calls return 401 (write:users is unauthorized). To get real user-management numbers we will need a token with write:users permissions on a test org/instance.
+The user-management benchmark works technically, but with the current dev token all POST /api/v2/users calls return 401 (write:users is unauthorized). 
