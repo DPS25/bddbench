@@ -10,7 +10,7 @@ import logging
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from behave import given, when, then
+from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(f"bddbench.influx_query_steps")
@@ -27,7 +27,6 @@ class QueryRunMetrics:
     total_time_s: float | None
     bytes_returned: int
     rows_returned: int
-
 
 # ---------- Helpers ----------
 
@@ -95,7 +94,6 @@ join(
 
     return flux
 
-
 def _run_single_query(
     # Execute a Flux query and collect timing/size metrics
     client_id: int,
@@ -106,6 +104,7 @@ def _run_single_query(
     output_format: str,
     compression: str,
 ) -> QueryRunMetrics:
+    
     enable_gzip = compression == "gzip"
 
     t_start = time.perf_counter()
@@ -233,7 +232,6 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
         "error_rate": error_rate,
     }
 
-
 def _export_query_result_to_main_influx(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
@@ -325,7 +323,6 @@ def _export_query_result_to_main_influx(
 
 
 # ----------- Scenario Steps -------------
-
 
 @when(
     'I run a generic query benchmark on measurement "{measurement}" '

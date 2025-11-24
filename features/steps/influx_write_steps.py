@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 import json
@@ -30,7 +29,6 @@ class BatchWriteMetrics:
 
 
 # ---------- Helpers ----------
-
 
 def _precision_from_str(p: str) -> WritePrecision:
     p = p.lower()
@@ -155,7 +153,6 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
 
     print("[write-bench] Exported write result to main Influx")
 
-
 def _run_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
@@ -229,7 +226,6 @@ def _run_writer_worker(
 
 
 # ---------- Scenario-Step ----------
-
 
 @when(
     'I run a generic write benchmark on measurement "{measurement}" '
@@ -366,7 +362,6 @@ def step_run_write_benchmark(
 
 
 # ---------- write result ----------
-
 
 @then('I store the generic write benchmark result as "{outfile}"')
 def step_store_write_result(context, outfile):
