@@ -12,13 +12,13 @@ def step_bucket_from_env(context: Context):
         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
 
 
-@given("the target bucket '{bucket}' from environment is available")
-def step_target_bucket_available(context: Context, bucket: str) -> None:
+@given("the target bucket from the SUT config is available")
+def step_target_bucket_available(context: Context) -> None:
     assert context.influxdb.sut.bucket is not None, (
         "SUT InfluxDB bucket is not configured"
     )
     bucket_api = context.influxdb.sut.client.buckets_api()
-    bucket_response = bucket_api.find_bucket_by_name(bucket)
+    bucket_response = bucket_api.find_bucket_by_name(context.influxdb.sut.bucket)
     assert bucket_response is not None, (
-        f"SUT InfluxDB bucket '{bucket}' is not available"
+        f"SUT InfluxDB bucket '{context.influxdb.sut.bucket}' is not available"
     )
