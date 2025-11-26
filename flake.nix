@@ -15,7 +15,7 @@
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314 pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib];
 shellHook = ''
   set -euo pipefail
-  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${LD_LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${"$"}{LD_LIBRARY_PATH:-}"
 
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
