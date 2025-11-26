@@ -12,7 +12,7 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
-      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314 pkgs.pkg-config pkgs.systemd.dev pkgs.gcc];
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314 pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib];
 shellHook = ''
   set -euo pipefail
   echo "🔐 Loading secrets from ${secrets}/secrets"
