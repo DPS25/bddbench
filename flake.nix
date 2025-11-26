@@ -12,7 +12,7 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
-      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv];
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314];
 shellHook = ''
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
