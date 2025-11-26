@@ -87,6 +87,16 @@ shellHook = ''
   . <(tr -d '\r' < .env)
   set +a
 
+  # Re-apply user env overrides (so local overrides win over secrets)
+  if [ -n "${ENV_NAME:-}" ]; then
+    ENV_FILE="./envs/$ENV_NAME.env"
+    if [ -f "$ENV_FILE" ]; then
+      echo "📄 Re-applying user env overrides into shell: $ENV_FILE"
+      set -a
+      . <(tr -d '\r' < "$ENV_FILE")
+      set +a
+    fi
+  fi
 
   # =====================================
   # 5. Activate Python venv
