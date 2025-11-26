@@ -14,8 +14,14 @@
       name = "env-with-secrets";
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314];
 shellHook = ''
+  set -euo pipefail
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
+
+  # Force uv t use python provided by Nix (aavoid ~/.local/shaare/uv/... on NixOS)
+  export UV_PYTHON="${pgks.python314}/bin/python3"
+  export UV_PYTHON_DOWNLOADS=never
+  export UV_PROJECT_ENVIRONMENT=".venv"
 
   uv sync
 
@@ -84,7 +90,12 @@ shellHook = ''
   # 5. Activate Python venv
   # =====================================
   echo "🐍 Activating virtual environment..."
-  source .venv/bin/activate
+  if [ -f .venv/bin/activate ]; then
+    source .venv/bin/activate
+  else
+    echo "❌ .venv was not created (uv sync failed)."
+    exit 1
+  fi
 '';
 
 
