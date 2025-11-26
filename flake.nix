@@ -19,7 +19,7 @@ shellHook = ''
   export SECRETS_DIR=${secrets}/secrets
 
   # Force uv t use python provided by Nix (aavoid ~/.local/shaare/uv/... on NixOS)
-  export UV_PYTHON="${pgks.python314}/bin/python3"
+  export UV_PYTHON="${pkgs.python314}/bin/python3"
   export UV_PYTHON_DOWNLOADS=never
   export UV_PROJECT_ENVIRONMENT=".venv"
 
