@@ -12,7 +12,7 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
-      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314 pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
 shellHook = ''
   set -euo pipefail
   export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${"$"}{LD_LIBRARY_PATH:-}"
@@ -21,7 +21,7 @@ shellHook = ''
   export SECRETS_DIR=${secrets}/secrets
 
   # Force uv t use python provided by Nix (aavoid ~/.local/shaare/uv/... on NixOS)
-  export UV_PYTHON="${pkgs.python314}/bin/python3"
+  export UV_PYTHON="${pkgs.python314FreeThreading}/bin/python3"
   export UV_PYTHON_DOWNLOADS=never
   export UV_PROJECT_ENVIRONMENT=".venv"
 
