@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from dotenv import load_dotenv
 from pathlib import Path
 
-from behave.model import Feature, Scenario
+from behave.model import Feature, Scenario, Step
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -184,6 +184,12 @@ def after_feature(context: Context, feature: Feature):
     logger.debug(
         f"=== finished feature: {feature.name} -> {feature.status.name} ==="
     )
+
+def before_step(context: Context, step: Step):
+    pass
+
+def after_step(context: Context, step: Step):
+    pass
 
 
 def before_scenario(context: Context, scenario: Scenario):

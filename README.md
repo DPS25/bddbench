@@ -1,3 +1,71 @@
+# General
+
+## Nomenclature
+```mermaid
+flowchart LR
+    subgraph bddbench
+        direction LR
+        behave
+        metrics-export
+        plotting
+    end
+    subgraph behave
+        direction LR
+    end
+    subgraph metrics-export
+        direction LR
+    end
+    subgraph plotting
+        direction LR
+    end
+```
+
+
+## Default Benchmark Sequence
+```mermaid
+sequenceDiagram
+    participant Trigger as external trigger
+    participant Main as dsp25-main-influx
+    participant SUT as dsp25-sut-influx
+
+    Trigger->>Main: start behave
+    activate Main
+
+    rect rgb(235, 235, 255)
+        Note over Main: behave → before_all
+
+        loop features
+            rect rgb(235, 255, 235)
+                Note over Main: before_feature
+
+                loop scenarios
+                    rect rgb(255, 245, 230)
+                        Note over Main: before_scenario
+
+                        loop steps
+                            Note over Main: before_step
+                            Main->>SUT: execute step
+                            Main->>Main: write KPIs
+                            Note over Main: after_step
+                        end
+
+                        Note over Main: after_scenario
+                    end
+                end
+
+                Note over Main: after_feature
+            end
+        end
+
+        Note over Main: after_all
+    end
+
+    deactivate Main
+
+    Main->>Trigger: signaling back
+```
+
+
 # Running the Environment
 
 The Nix environment provides a fully configured setup for your project. To start it:
@@ -67,3 +135,5 @@ If you encounter issues while executing, you can gather debug information by run
 ```bash
 tail -f reports/behave.log
 ```
+
+
