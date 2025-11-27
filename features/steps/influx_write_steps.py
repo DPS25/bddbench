@@ -17,28 +17,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(f"bddbench.influx_write_steps")
 
-# ---------- Background-Steps (from environment) ----------
-
-
-# @given("a SUT InfluxDB v2 endpoint is configured and reachable")
-# def step_bucket_from_env(context: Context):
-#     if not context.influxdb.sut.client.ping():
-#         logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
-#         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
-#
-#
-# @given("the target bucket '{bucket}' from environment is available")
-# def step_target_bucket_available(context: Context, bucket: str) -> None:
-#     assert context.influxdb.sut.bucket is not None, (
-#         "SUT InfluxDB bucket is not configured"
-#     )
-#     bucket_api = context.influxdb.sut.client.buckets_api()
-#     bucket_response = bucket_api.find_bucket_by_name(bucket)
-#     assert bucket_response is not None, (
-#         f"SUT InfluxDB bucket '{bucket}' is not available"
-#     )
-
-
 # ----------- Datatype ------------
 
 
@@ -52,7 +30,6 @@ class BatchWriteMetrics:
 
 
 # ---------- Helpers ----------
-
 
 def _precision_from_str(p: str) -> WritePrecision:
     p = p.lower()
@@ -177,7 +154,6 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
 
     print("[write-bench] Exported write result to main Influx")
 
-
 def _run_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
@@ -251,7 +227,6 @@ def _run_writer_worker(
 
 
 # ---------- Scenario-Step ----------
-
 
 @when(
     'I run a generic write benchmark on measurement "{measurement}" '
@@ -388,7 +363,6 @@ def step_run_write_benchmark(
 
 
 # ---------- write result ----------
-
 
 @then('I store the generic write benchmark result as "{outfile}"')
 def step_store_write_result(context, outfile):

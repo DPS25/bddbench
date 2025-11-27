@@ -10,29 +10,10 @@ import logging
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from behave import given, when, then
+from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(f"bddbench.influx_query_steps")
-
-@given("a SUT InfluxDB v2 endpoint is configured and reachable")
-def step_bucket_from_env(context: Context):
-    if not context.influxdb.sut.client.ping():
-        logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
-        raise RuntimeError("SUT InfluxDB endpoint is not reachable")
-
-
-@given('the target bucket from the SUT config is available')
-def step_target_bucket_available(context: Context) -> None:
-    assert context.influxdb.sut.bucket is not None, (
-        "SUT InfluxDB bucket is not configured"
-    )
-    bucket_api = context.influxdb.sut.client.buckets_api()
-    bucket_response = bucket_api.find_bucket_by_name(context.influxdb.sut.bucket)
-    assert bucket_response is not None, (
-        f"SUT InfluxDB bucket '{context.influxdb.sut.bucket}' is not available"
-    )
-
 
 # ---------- Datatypes -----------
 
@@ -46,7 +27,6 @@ class QueryRunMetrics:
     total_time_s: float | None
     bytes_returned: int
     rows_returned: int
-
 
 # ---------- Helpers ----------
 
@@ -114,7 +94,6 @@ join(
 
     return flux
 
-
 def _run_single_query(
     # Execute a Flux query and collect timing/size metrics
     client_id: int,
@@ -125,6 +104,7 @@ def _run_single_query(
     output_format: str,
     compression: str,
 ) -> QueryRunMetrics:
+    
     enable_gzip = compression == "gzip"
 
     t_start = time.perf_counter()
@@ -252,7 +232,6 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
         "error_rate": error_rate,
     }
 
-
 def _export_query_result_to_main_influx(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
@@ -344,7 +323,6 @@ def _export_query_result_to_main_influx(
 
 
 # ----------- Scenario Steps -------------
-
 
 @when(
     'I run a generic query benchmark on measurement "{measurement}" '
