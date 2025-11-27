@@ -4,10 +4,10 @@ Feature: InfluxDB v2 multi-bucket write benchmark (/api/v2/write)
   I want to create multiple buckets and write into them for a defined time
 
   Background:
-    Given a generic InfluxDB v2 endpoint is configured from environment
-    And a generic target bucket from environment is available
+    Given a SUT InfluxDB v2 endpoint is configured and reachable
+    And the target bucket from the SUT config is available
 
-  @poc @influx @write @multibucket
+  @influx @write @multibucket
   Scenario Outline: multi-bucket write benchmark run (duration based)
     When I run a multi-bucket write benchmark on base measurement "<measurement>" with bucket prefix "<bucket_prefix>" creating <bucket_count> buckets, batch size <batch_size>, <parallel_writers> parallel writers per bucket, compression "<compression>", timestamp precision "<precision>", point complexity "<point_complexity>", tag cardinality <tag_cardinality> and time ordering "<time_ordering>" for <duration_s> seconds
     Then I store the multi-bucket write benchmark result as "reports/multi-write-<id>.json"

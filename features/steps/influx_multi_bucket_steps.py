@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import math
@@ -9,10 +10,13 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from behave import when, then
-from influxdb_client import InfluxDBClient, Point, WritePrecision
+from behave.runner import Context
+from influxdb_client import InfluxDBClient, Point, WritePrecision, WriteApi
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
+logger = logging.getLogger(f"bddbench.influx_multiple_bucket_steps")
 
 # ----------- Datatypes ------------
 
@@ -81,15 +85,11 @@ def _build_point(
     return p
 
 
-def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
-    main_url = os.getenv("MAIN_INFLUX_URL")
-    main_token = os.getenv("MAIN_INFLUX_TOKEN")
-    main_org = os.getenv("MAIN_INFLUX_ORG")
-    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
-
-    if not main_url or not main_token or not main_org or not main_bucket:
-        print("[multi-write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
-        return
+def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: str, context: Context) -> None:
+    main_url = context.influxdb.main.url
+    main_token = context.influxdb.main.token
+    main_org = context.influxdb.main.org
+    main_bucket = context.influxdb.main.bucket
 
     scenario_id = None
     base_name = os.path.basename(outfile)
@@ -131,12 +131,13 @@ def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: s
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    print("[multi-write-bench] Exported multi-write result to main Influx")
+    logging.info("[multi-write-bench] Exported multi-write result to main Influx")
 
 
 def _run_duration_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
+    write_api: WriteApi,
     bucket: str,
     org: str,
     measurement: str,
@@ -150,7 +151,6 @@ def _run_duration_writer_worker(
     stop_at: float,
 ) -> List[BatchWriteMetrics]:
 
-    write_api = client.write_api(write_options=SYNCHRONOUS)
     metrics: List[BatchWriteMetrics] = []
 
     batch_index = 0
@@ -196,7 +196,7 @@ def _run_duration_writer_worker(
                 status_code=500,
                 ok=False,
             )
-            print(f"[multi-write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
+            logging.info(f"[multi-write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
 
         metrics.append(m)
         batch_index += 1
@@ -228,21 +228,13 @@ def step_run_multi_bucket_write_benchmark(
     time_ordering,
     duration_s,
 ):
-    url = getattr(context, "influx_url", None) or os.getenv("INFLUX_URL")
-    token = getattr(context, "influx_token", None) or os.getenv("INFLUX_TOKEN")
-    org = getattr(context, "influx_org", None) or os.getenv("INFLUX_ORG")
-
-    if not url or not token or not org:
-        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG must be set")
+    url = context.influxdb.sut.url
+    token = context.influxdb.sut.token
+    org = context.influxdb.sut.org
 
     precision_enum = _precision_from_str(precision)
 
-    client = InfluxDBClient(
-        url=url,
-        token=token,
-        org=org,
-        enable_gzip=(compression == "gzip"),
-    )
+    client = context.influxdb.sut.client
     buckets_api = client.buckets_api()
 
     created_buckets: List[str] = []
@@ -250,9 +242,9 @@ def step_run_multi_bucket_write_benchmark(
         bucket_name = f"{bucket_prefix}_{i}"
         try:
             buckets_api.create_bucket(bucket_name=bucket_name, org=org)
-            print(f"[multi-write-bench] Created bucket: {bucket_name}")
+            logging.info(f"[multi-write-bench] Created bucket: {bucket_name}")
         except Exception as exc:
-            print(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
+            logging.info(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
         created_buckets.append(bucket_name)
 
     if precision_enum == WritePrecision.NS:
@@ -277,6 +269,7 @@ def step_run_multi_bucket_write_benchmark(
                         _run_duration_writer_worker,
                         writer_id=writer_id,
                         client=client,
+                        write_api = context.influxdb.sut.write_api,
                         bucket=bucket_name,
                         org=org,
                         measurement=measurement,
@@ -358,7 +351,7 @@ def step_store_multi_bucket_write_result(context, outfile):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    print("=== Multi-Bucket Write Benchmark Result ===")
-    print(json.dumps(result, indent=2))
+    logging.info("=== Multi-Bucket Write Benchmark Result ===")
+    logging.info(json.dumps(result, indent=2))
 
-    _export_multi_write_result_to_main_influx(result, outfile)
+    _export_multi_write_result_to_main_influx(result, outfile, context)
