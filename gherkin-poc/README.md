@@ -1,138 +1,209 @@
-# General
+This folder contins a proof of concept to run Gherkin features with Python (behave) for InfluxDB-like benchmarks  
 
-## Nomenclature
-```mermaid
-flowchart LR
-    subgraph bddbench
-        direction LR
-        behave
-        metrics-export
-        plotting
-    end
-    subgraph behave
-        direction LR
-    end
-    subgraph metrics-export
-        direction LR
-    end
-    subgraph plotting
-        direction LR
-    end
+**How to install:**
+
+```
+PowerShell (Windows):
+
+git clone https://github.com/DPS25/bddbench.git
+
+cd .\bddbench\gherkin-poc
+
+python -m venv .venv
+
+.\.venv\Scripts\Activate.ps1
+
+pip install -r .\requirements.txt
+
+behave
 ```
 
+```  
+Bash (Linx/macOS/WSL):
 
-## Default Benchmark Sequence
-```mermaid
-sequenceDiagram
-    participant Trigger as external trigger
-    participant Main as dsp25-main-influx
-    participant SUT as dsp25-sut-influx
+git clone https://github.com/DPS25/bddbench.git
 
-    Trigger->>Main: start behave
-    activate Main
+cd bddbench/gherkin-poc
 
-    rect rgb(235, 235, 255)
-        Note over Main: behave → before_all
+python3 -m venv .venv
 
-        loop features
-            rect rgb(235, 255, 235)
-                Note over Main: before_feature
+source .venv/bin/activate
 
-                loop scenarios
-                    rect rgb(255, 245, 230)
-                        Note over Main: before_scenario
+pip install -r requirements.txt
 
-                        loop steps
-                            Note over Main: before_step
-                            Main->>SUT: execute step
-                            Main->>Main: write KPIs
-                            Note over Main: after_step
-                        end
-
-                        Note over Main: after_scenario
-                    end
-                end
-
-                Note over Main: after_feature
-            end
-        end
-
-        Note over Main: after_all
-    end
-
-    deactivate Main
-
-    Main->>Trigger: signaling back
+behave
 ```
 
+the following console output should be generated:
 
-# Running the Environment
+```
+Feature: InfluxDB v2 write path performance (POC) # features/write_latency.feature:1
+  In order to express performance benchmarks in BDD
+  As the team
+  I want to define a write workload and check basic latency rules
+  Background:   # features/write_latency.feature:6
 
-The Nix environment provides a fully configured setup for your project. To start it:
+  @poc @m1 @write
+  Scenario Outline: Write load with basic thresholds -- @1.1                        # features/write_latency.feature:18
+    Given an InfluxDB endpoint is configured                                        # features/steps/write_steps.py:8
+    And a bucket "bdbench" is defined                                               # features/steps/write_steps.py:14
+    When I write 200 points per second for 5 seconds                                # features/steps/write_steps.py:19
+    Then the median latency shall be <= 50 ms                                       # features/steps/write_steps.py:43
+    And I store the benchmark result as "gherkin-poc/reports/write-latency-p1.json" # features/steps/write_steps.py:50
 
-```bash
-# Set ENV_NAME to one of the environments in envs/
-export ENV_NAME=NAME_OF_YOUR_ENV && nix develop
+1 feature passed, 0 failed, 0 skipped
+1 scenario passed, 0 failed, 0 skipped
+5 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m0.056s
 ```
 
-* `ENV_NAME` specifies which environment configuration to use (found in the `envs/` folder).
-* `nix develop` starts a Nix shell with all the required dependencies and environment variables.
+--------------------------------
 
-Example output:
+## First real Influx Test 
+# Influx BDD Benchmark
 
-```bash
-`export ENV_NAME=johann && nix develop`
-🔐 Loading secrets from /nix/store/j2v44phb5lkpzq9yvyzfxh2yhbvgqx9w-source/secrets
-🔑 Loading main_influx.enc.yaml...
-🔑 Loading sut_influx.enc.yaml...
-🔗 Creating symlink .env → ./envs/johann.env
-```
-
-* `🔐 Loading secrets...` → your encrypted secrets are being loaded.
-* `🔑 Loading ...` → individual secret files for InfluxDB are being decrypted.
-* `🔗 Creating symlink ...` → a `.env` file is created pointing to your chosen environment file.
+This repo contains the first **real** BDD feature that writes data to our InfluxDB and reads it back. This lets us test end-to-end: token valid, org correct, bucket reachaable, Flux query works
 
 ---
 
-## Environment Variables
+## idea
 
-Inside the Nix shell, these environment variables are automatically set:
+the feature `features/influx_basic_benchmark.feature` does:
 
-```bash
-INFLUXDB_SUT_ORG=3S
-MAIN_INFLUX_TOKEN=
-INFLUXDB_SUT_BUCKET=dsp25
-INFLUXDB_MAIN_BUCKET=dsp25
-INFLUXDB_SUT_URL=http://127.0.0.1:8001
-INFLUXDB_MAIN_URL=http://localhost:8000
-MAIN_INFLUX_ADMIN_PASSWORD=
-SUT_INFLUX_TOKEN=
-INFLUXDB_MAIN_ORG=3S
-SUT_INFLUX_ADMIN_PASSWORD=
-```
-
-These variables configure connections to your InfluxDB instances. For example:
-
-* `INFLUXDB_MAIN_URL` → the URL of your main InfluxDB server.
-* `MAIN_INFLUX_TOKEN` → authentication token for the main InfluxDB.
-* `SUT_INFLUX_TOKEN` → token for the SUT InfluxDB instance.
+1. connects via Env-Vars with the influx
+2. 10 points with measurement `bddbench_write` and a specific `run_id` wrote into the bucket
+3. the influx reads the 10 points
+4. (optional) check latency
+   
+We are able to test it directly from our BDD environment
 
 ---
 
-## Adding Packages
+## 1. get influx tokens directly from UI
 
-If you need extra Python packages inside the Nix shell, use `uv`:
+1. in Influx, go to Load Data on the left
+2. Tab "API Tokens"
+3. Either click an existing token or **Generate API Token --> Custom API Token**
+4. for bucket `dsp25` check both `read` and `write` 
+5. Copy the token --> later use it as  `INFLUX_TOKEN` 
+
+> Note: the token must really come from the UI
+
+---
+
+## 2. Find Org name
+
+Query the server once with teh token
 
 ```bash
-uv add PACKAGE_NAME
+curl -s -H "Authorization: Token <TOKEN_FROM_UI>" http://localhost:8086/api/v2/orgs
+```
+------------------------------
+## 3. How to run
+```
+# 1. fetch repo
+git clone -b POC https://github.com/DPS25/bddbench.git
+cd bddbench/gherkin-poc
+
+# 2. (optional) get org name from Influx
+curl -s -H "Authorization: Token <TOKEN_FROM_UI>" http://localhost:8086/api/v2/orgs
+
+# 3. open NixOS shell with Python + behave
+nix-shell -p python3 python3Packages.pip python3Packages.behave python3Packages.influxdb-client
+
+# 4. start the benchmark
+INFLUX_URL=http://localhost:8086 \
+INFLUX_ORG=<S3> \
+INFLUX_BUCKET=dsp25 \
+INFLUX_TOKEN="<TOKEN_FROM_UI>" \
+behave -v --tags @influx
 ```
 
-* `uv` is like `pip` but faster and better
 
-## Get Debug Info
-If you encounter issues while executing, you can gather debug information by running:
+# Offline KPI Mock + Single $t$-Test
 
-```bash
-tail -f reports/behave.log
+This bundle generates a mock CSV of KPI rows and then run a one-sample, two-sided t-test against a target latency.
+
+## Files
+
+- `mock_seed_kpis_local.py`: Generates realistic mock KPI rows into `mock/main_kpis.csv` (two groups: `config_id=v1` and `config_id=v2`).
+
+- `analyze_ttest_single_offline.py`: Loads KPI values from the CSV, filters by scenario/tag, runs a _two-sided one-sample t-test_ vs `TARGET_MS`, and plots a histogram + mean with 95% confidence interval.
+
+## Start
+
+```shell
+# 1) Create mock data
+python mock_seed_kpis_local.py
+
+# 2) Run a single t-test on a subset (e.g., scenario=write_basic, config_id=v1)
+export KPI_CSV=mock/main_kpis.csv
+export KPI_SCENARIO=write_basic
+export KPI_GROUP_TAG=config_id
+export KPI_GROUP_VAL=v1
+export KPI_FIELD=mean_ms          # or median_ms, p95_ms, ...
+export KPI_TARGET_MS=15
+export KPI_MEASUREMENT=bddbench_summary
+
+python analyze_ttest_single_offline.py
 ```
 
+The script prints statistical results:
+
+- sample size (`n`)
+- sample mean and standard deviation
+- t-statistic
+- two-sided p-value
+- 95% confidence interval for the mean
+
+It produces two plots:
+
+- Histogram of per-run KPI values
+- Mean with 95% confidence interval
+
+## What the mock seeder produces
+
+`mock_seed_kpis_local.py` writes a CSV that mimics an Influx query export (flat records with `_measurement`, `_field`, `_value`, and tags). It creates:
+
+- 10 runs for `config_id=v1` (slightly slower; base ~10.05 ms, spread ~0.06)
+- 10 runs for `config_id=v2` (slightly faster; base ~9.95 ms, spread ~0.05)
+- Each "run" aggregates ~20 synthetic samples into summary fields.
+
+
+---
+
+# Two-sample $t$-Test
+This module compares two independent groups (e.g., `config_id=v1` vs `config_id=v2`) using a two-sided Welch two-sample t-test, which does not assume equal variances. It computes:
+
+- sample size per group  
+- group means and standard deviations  
+- Welch t-statistic  
+- two-sided p-value  
+- 95% confidence intervals for each group  
+- 95% confidence interval for the difference in means  
+
+It also generates two plots:
+
+- Overlaid histograms for both groups  
+- Mean comparison with per-group 95% confidence intervals
+
+## File
+
+- `analyze_ttest_two_sample_offline.py`: Loads KPI values for two groups from the same CSV format, filters by scenario/tag, and performs a two-sample Welch t-test.
+
+## Start
+
+```shell
+# 1) Create mock data
+python mock_seed_kpis_local.py
+
+# 2) Compare two groups (e.g., config_id=v1 vs config_id=v2)
+export KPI_CSV=mock/main_kpis.csv
+export KPI_SCENARIO=write_basic
+export KPI_GROUP_TAG=config_id
+export KPI_GROUP_VAL_A=v1
+export KPI_GROUP_VAL_B=v2
+export KPI_FIELD=mean_ms
+export KPI_MEASUREMENT=bddbench_summary
+
+python analyze_ttest_two_sample_offline.py
