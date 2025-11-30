@@ -1,0 +1,15 @@
+{
+  "influx_url": "http://localhost:8086",
+  "bucket": "dsp25",
+  "points_per_second": 200,
+  "duration_seconds": 5,
+  "latency_samples_ms": [
+    10.156869888305664,
+    10.194063186645508,
+    10.182380676269531,
+    10.188102722167969,
+    10.19430160522461
+  ],
+  "median_ms": 10.188102722167969,
+  "status": "PASS"
+}

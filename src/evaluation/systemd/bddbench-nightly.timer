@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly timer for BDD benchmark KPI analysis
+
+[Timer]
+#OnCalendar=*-*-* 02:00:00
+OnCalendar=*:0/1
+Persistent=true
+
+
+
+
+
+[Install]
+WantedBy=timers.target
+

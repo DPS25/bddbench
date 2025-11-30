@@ -1,7 +1,13 @@
 import os, math, csv
+from pathlib import Path
+
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")   
 import matplotlib.pyplot as plt
 from scipy import stats
+from datetime import datetime
+
 
 CSV_PATH = os.getenv("KPI_CSV", "mock/main_kpis.csv")
 SCENARIO = os.getenv("KPI_SCENARIO", "write_basic")
@@ -29,6 +35,8 @@ def load_values():
 
 
 def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
     values = load_values()
     n = len(values)
     if n < 2:
@@ -53,15 +61,25 @@ def main():
     print(f"t={t_stat:.3f}, p(two)={p_two_tailed:.4g}")
     print(f"95% CI: [{ci_low:.3f}, {ci_high:.3f}] ms")
 
-    # histogram
+    # name: scenario + group(optional) + field
+    group_part = f"_{GROUP_TAG}-{GROUP_VAL}" if GROUP_TAG and GROUP_VAL else ""
+    base_name = f"{SCENARIO}{group_part}_{FIELD_NAME}"
+
+    # --- 1) Histogram ---
     plt.figure()
     plt.title(f"Per-run {FIELD_NAME} (ms)")
     plt.hist(values, bins=10)
     plt.xlabel(f"{FIELD_NAME} (ms)")
     plt.ylabel("Count")
-    plt.show()
 
-    # mean + confidence interval (zoom to CI)
+    ts = timestamp()
+    hist_path = OUT_DIR / f"{ts}_{base_name}_hist.png"
+    plt.tight_layout()
+    plt.savefig(hist_path)
+    plt.close()
+    print(f"[single] Saved histogram to: {hist_path}")
+
+    # --- 2) Mean + 95% CI ---
     plt.figure()
     plt.title(f"{FIELD_NAME} with 95% CI")
     plt.errorbar(
@@ -91,3 +109,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
