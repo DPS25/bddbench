@@ -9,16 +9,13 @@ from scipy import stats
 from datetime import datetime
 
 
-CSV_PATH   = os.getenv("KPI_CSV", "mock/main_kpis.csv")
-SCENARIO   = os.getenv("KPI_SCENARIO", "write_basic")
-GROUP_TAG  = os.getenv("KPI_GROUP_TAG")           
-GROUP_VAL  = os.getenv("KPI_GROUP_VAL")           
-FIELD_NAME = os.getenv("KPI_FIELD", "mean_ms")    
-TARGET_MS  = float(os.getenv("KPI_TARGET_MS", "15"))
-MEAS       = os.getenv("KPI_MEASUREMENT", "bddbench_summary")
-OUT_DIR    = Path(os.getenv("KPI_PLOT_DIR", "reports/plots"))
-
-
+CSV_PATH = os.getenv("KPI_CSV", "mock/main_kpis.csv")
+SCENARIO = os.getenv("KPI_SCENARIO", "write_basic")
+GROUP_TAG = os.getenv("KPI_GROUP_TAG")  # e.g., "config_id"
+GROUP_VAL = os.getenv("KPI_GROUP_VAL")  # e.g., "v1" (optional)
+FIELD_NAME = os.getenv("KPI_FIELD", "mean_ms")  # e.g., mean_ms or median_ms
+TARGET_MS = float(os.getenv("KPI_TARGET_MS", "15"))
+MEAS = os.getenv("KPI_MEASUREMENT", "bddbench_summary")
 
 
 def load_values():
@@ -37,10 +34,6 @@ def load_values():
     return np.array(vals, dtype=float)
 
 
-def timestamp():
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -53,7 +46,7 @@ def main():
     mean_val = float(np.mean(values))
     sd = float(np.std(values, ddof=1))
 
-    # two-sided t-test (Student t)
+    # two-sided t-test
     t_stat, p_two_tailed = stats.ttest_1samp(
         values, popmean=TARGET_MS, alternative="two-sided"
     )
@@ -90,9 +83,14 @@ def main():
     plt.figure()
     plt.title(f"{FIELD_NAME} with 95% CI")
     plt.errorbar(
-        [0], [mean_val],
+        [0],
+        [mean_val],
         yerr=[[mean_val - ci_low], [ci_high - mean_val]],
-        fmt='o', capsize=6, elinewidth=2, markeredgewidth=2, markersize=8
+        fmt="o",
+        capsize=6,
+        elinewidth=2,
+        markeredgewidth=2,
+        markersize=8,
     )
 
     pad = max(0.02 * (ci_high - ci_low), 0.05)
@@ -100,18 +98,13 @@ def main():
     ymax = ci_high + pad
 
     if ymin <= TARGET_MS <= ymax:
-        plt.axhline(TARGET_MS, linestyle='--')
+        plt.axhline(TARGET_MS, linestyle="--")
 
     plt.ylim(ymin, ymax)
     plt.xticks([0], [f"{SCENARIO}"])
     plt.ylabel("Latency (ms)")
-    plt.grid(True, axis='y', alpha=0.3)
-
-    ci_path = OUT_DIR / f"{ts}_{base_name}_ci.png"
-    plt.tight_layout()
-    plt.savefig(ci_path)
-    plt.close()
-    print(f"[single] Saved CI plot to: {ci_path}")
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.show()
 
 
 if __name__ == "__main__":
