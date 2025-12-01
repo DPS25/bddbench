@@ -20,7 +20,7 @@ shellHook = ''
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
 
-  # Force uv t use python provided by Nix (aavoid ~/.local/shaare/uv/... on NixOS)
+  # Force uv t use python provided by Nix (avoid ~/.local/share/uv/... on NixOS)
   export UV_PYTHON="${pkgs.python314FreeThreading}/bin/python3"
   export UV_PYTHON_DOWNLOADS=never
   export UV_PROJECT_ENVIRONMENT=".venv"
@@ -63,7 +63,6 @@ shellHook = ''
 
     if [ -f "$file" ]; then
       echo "🔑 Merging secrets from $(basename "$file")"
-
       sops -d "$file" | \
         yq -r --arg envprefix "$envprefix" '
           to_entries[] |
