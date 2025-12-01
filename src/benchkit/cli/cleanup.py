@@ -62,6 +62,8 @@ def _unique(seq: List[str]) -> List[str]:
 
 def run_cleanup_cli(args) -> int:
     target: str = args.target
+    if target == "main" and not getattr(args, "allow_main", False):
+        raise RuntimeError("Refusing to run on MAIN without --allow-main.")
     conn = _conn_from_env(target)
     stop = args.stop or _now_rfc3339()
     delete_buckets = bool(args.delete_buckets)
