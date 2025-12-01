@@ -12,6 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("cleanup", help="Clean up bddbench test artifacts (dry-run by default).")
     c.add_argument("--target", choices=["sut", "main"], required=True, help="Where to clean up.")
+    c.add_argument("--allow-main", action="store_true", help="Allow destructive operations on MAIN.")
 
     mode = c.add_mutually_exclusive_group()
     mode.add_argument("--delete-buckets", action="store_true", help="Delete buckets.")
