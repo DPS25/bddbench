@@ -9,11 +9,12 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any
 
-from behave import given, when, then
+from behave import when, then
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from benchkit.state import ensure_run_id, register_written_data
 
 logger = logging.getLogger(f"bddbench.influx_write_steps")
 
@@ -50,6 +51,7 @@ def _build_point(
     tag_cardinality: int,
     time_ordering: str,
     precision: WritePrecision,
+    run_id: str | None = None,
 ) -> Point:
     """
     Creates a point containing:
@@ -72,6 +74,8 @@ def _build_point(
         ts = base_ts + idx
 
     p = Point(measurement).tag("device_id", f"dev-{device_id}")
+    if run_id:
+        p = p.tag("run_id", run_id)
 
     p = p.field("value", float(idx)).field("seq", idx)
 
@@ -84,14 +88,6 @@ def _build_point(
 
     p = p.time(ts, precision)
     return p
-
-
-def _maybe_cleanup_before_run(context, measurement: str):
-    # cleanup logic not implemented
-    print(
-        f"[write-bench] NOTE: cleanup for measurement={measurement} is not implemented here."
-    )
-
 
 def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
     """
@@ -136,6 +132,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
         .tag("sut_org", str(meta.get("org", "")))
         .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
+        .tag("run_id", str(meta.get("run_id", "")))
         # fields
         .field("total_points", int(meta.get("total_points", 0)))
         .field("total_batches", int(meta.get("total_batches", 0)))
@@ -168,6 +165,7 @@ def _run_writer_worker(
     tag_cardinality: int,
     time_ordering: str,
     base_ts: int,
+    run_id: str,
 ) -> List[BatchWriteMetrics]:
     """
     A writer writes `batches` batches per `batch_size` points
@@ -190,6 +188,7 @@ def _run_writer_worker(
                 tag_cardinality=tag_cardinality,
                 time_ordering=time_ordering,
                 precision=precision_enum,
+                run_id=run_id,
             )
             points.append(p)
 
@@ -269,15 +268,16 @@ def step_run_write_benchmark(
     token = context.influxdb.sut.token
     org = context.influxdb.sut.org
     bucket = context.influxdb.sut.bucket
-
+    run_id = ensure_run_id(context)
+    
     if not url or not token or not org or not bucket:
         raise RuntimeError(
             "INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET must be set"
         )
 
-    precision_enum = _precision_from_str(precision)
+    register_written_data("sut", bucket=bucket, measurement=measurement, run_id=run_id)
 
-    _maybe_cleanup_before_run(context, measurement)
+    precision_enum = _precision_from_str(precision)
 
     client = context.influxdb.sut.client
 
@@ -311,6 +311,7 @@ def step_run_write_benchmark(
                 tag_cardinality=tag_cardinality,
                 time_ordering=time_ordering,
                 base_ts=base_ts,
+                run_id=run_id,
             )
             for w in range(parallel_writers)
         ]
@@ -333,6 +334,7 @@ def step_run_write_benchmark(
         "bucket": bucket,
         "org": org,
         "sut_url": url,
+        "run_id": run_id,
         "total_batches": total_batches,
         "total_points": total_points,
         "total_duration_s": total_duration_s,
