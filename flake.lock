@@ -2,11 +2,11 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 1762844143,
-        "narHash": "sha256-SlybxLZ1/e4T2lb1czEtWVzDCVSTvk9WLwGhmxFmBxI=",
+        "lastModified": 1764517877,
+        "narHash": "sha256-pp3uT4hHijIC8JUK5MEqeAWmParJrgBVzHLNfJDZxg4=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "9da7f1cf7f8a6e2a7cb3001b048546c92a8258b4",
+        "rev": "2d293cbfa5a793b4c50d17c05ef9e385b90edf6c",
         "type": "github"
       },
       "original": {
@@ -44,11 +44,11 @@
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1762706023,
-        "narHash": "sha256-/rPUahGruxrZOB0DB+aPdULmp/bTeoaZaVobytMhaRs=",
+        "lastModified": 1764608212,
+        "narHash": "sha256-8a6HbCf7Zc3Kvh7sqK8mFVBX/n7513mFENscfZmoqWM=",
         "ref": "refs/heads/main",
-        "rev": "649ed8d4a738fe52d626846aa49d9025947be7e1",
-        "revCount": 22,
+        "rev": "9c096fdffb5d34d6ce296d519a657a35b76fc03b",
+        "revCount": 30,
         "type": "git",
         "url": "ssh://git@github.com/DPS25/nix.git"
       },
