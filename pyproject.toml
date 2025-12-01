@@ -25,3 +25,17 @@ dev = [
 select = ["ANN"]
 ignore = []
 
+[project.scripts]
+bddbench = "benchkit.cli.__main__:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
