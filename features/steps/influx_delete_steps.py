@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import json
@@ -10,6 +11,9 @@ from behave import when, then
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+
+logger = logging.getLogger(f"bddbench.influx_delete_steps")
 
 
 # ---------- Datatype ----------
@@ -81,7 +85,7 @@ def _export_delete_result_to_main_influx(
     main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        print("[delete-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
+        logging.info("[delete-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
         return
 
     scenario_id = None
@@ -113,7 +117,7 @@ def _export_delete_result_to_main_influx(
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    print("[delete-bench] Exported delete result to main Influx")
+    logging.info("[delete-bench] Exported delete result to main Influx")
 
 
 
@@ -164,7 +168,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     try:
         delete_api.delete(start=start, stop=stop, predicate=predicate, bucket=bucket, org=org)
     except Exception as exc:
-        print(f"[delete-bench] delete for measurement={measurement} failed: {exc}")
+        logging.info(f"[delete-bench] delete for measurement={measurement} failed: {exc}")
         ok = False
         status_code = 500
     t1 = time.perf_counter()
@@ -198,7 +202,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         "expected_points": expected_points,
     }
 
-    print(
+    logging.info(
         f"[delete-bench] measurement={measurement} "
         f"before={points_before}, after={points_after}, "
         f"latency={latency_s:.6f}s, ok={ok}"
@@ -262,7 +266,7 @@ def step_store_delete_result(context: Context, outfile: str) -> None:
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    print("=== Generic Delete Benchmark Result ===")
-    print(json.dumps(result, indent=2))
+    logging.info("=== Generic Delete Benchmark Result ===")
+    logging.info(json.dumps(result, indent=2))
 
     _export_delete_result_to_main_influx(meta, metrics, outfile)
