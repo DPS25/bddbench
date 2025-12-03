@@ -67,6 +67,7 @@ from(bucket: "{bucket}")
 
 
 def _export_delete_result_to_main_influx(
+    context: Context,
     meta: Dict[str, Any],
     metrics: DeleteRunMetrics,
     outfile: str,
@@ -79,14 +80,14 @@ def _export_delete_result_to_main_influx(
 
     This mirrors the style of _export_write_result_to_main_influx / query export.
     """
-    main_url = os.getenv("MAIN_INFLUX_URL")
-    main_token = os.getenv("MAIN_INFLUX_TOKEN")
-    main_org = os.getenv("MAIN_INFLUX_ORG")
-    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
 
-    if not main_url or not main_token or not main_org or not main_bucket:
-        logging.info("[delete-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx")
-        return
+    if not getattr(context.influxdb.main, "client", None):
+        raise RuntimeError("MAIN InfluxDB client is not configured on context.influxdb.sut")
+
+    main_url = context.influxdb.main.url
+    main_token = context.influxdb.main.token
+    main_org = context.influxdb.main.org
+    main_bucket = context.influxdb.main.bucket
 
     scenario_id = None
     base_name = os.path.basename(outfile)
@@ -118,10 +119,6 @@ def _export_delete_result_to_main_influx(
     client.close()
 
     logging.info("[delete-bench] Exported delete result to main Influx")
-
-
-
-
 
 
 
@@ -207,8 +204,6 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         f"before={points_before}, after={points_after}, "
         f"latency={latency_s:.6f}s, ok={ok}"
     )
-
-
 
 
 
