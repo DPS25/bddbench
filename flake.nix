@@ -16,6 +16,8 @@
     pkgs.zlib
   ];
   in {
+   formatter.${system} = pkgs.nixfmt-tree;
+
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
@@ -25,7 +27,6 @@
       NIX_LD_LIBRARY_PATH = libPath;
       LD_LIBRARY_PATH = libPath;
     };
-
 
 
 
