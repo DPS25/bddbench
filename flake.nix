@@ -9,13 +9,27 @@
   outputs = { self, nixpkgs, secrets, ... }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
+      libPath = nixpkgs.lib.makeLibraryPath [
+    pkgs.systemd.dev
+    pkgs.gcc
+    pkgs.stdenv.cc.cc.lib
+    pkgs.zlib
+  ];
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
+
+
+    env = {
+      NIX_LD_LIBRARY_PATH = libPath;
+      LD_LIBRARY_PATH = libPath;
+    };
+
+
+
+
 shellHook = ''
-  set -euo pipefail
-  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${"$"}{LD_LIBRARY_PATH:-}"
 
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
@@ -102,11 +116,14 @@ shellHook = ''
   # =====================================
   echo "🐍 Activating virtual environment..."
   if [ -f .venv/bin/activate ]; then
-    source .venv/bin/activate
+    echo "✅ .venv found."
+    source ./.venv/bin/activate
+    echo "✅ .venv activated."
   else
     echo "❌ .venv was not created (uv sync failed)."
     exit 1
   fi
+  echo "done."
 '';
 
 
