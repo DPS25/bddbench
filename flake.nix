@@ -12,7 +12,7 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
-      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib pkgs.sysbench];
 shellHook = ''
   set -euo pipefail
   export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${"$"}{LD_LIBRARY_PATH:-}"
