@@ -57,15 +57,15 @@ def _load_env(context: Context):
         text = "INFLUXDB_MAIN_URL environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.main.token is None:
+    if not (context.influxdb.main.token or "").strip():
         text = "INFLUXDB_MAIN_TOKEN environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.main.org is None:
+    if not (context.influxdb.main.org or "").strip():
         text = "INFLUXDB_MAIN_ORG environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.main.bucket is None:
+    if not (context.influxdb.main.bucket or "").strip():
         text = "INFLUXDB_MAIN_BUCKET environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
@@ -98,15 +98,15 @@ def _load_env(context: Context):
         text = "INFLUXDB_SUT_URL environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.sut.token is None:
+    if not (context.influxdb.sut.token or "").strip():
         text = "INFLUXDB_SUT_TOKEN environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.sut.org is None:
+    if not (context.influxdb.sut.org or "").strip():
         text = "INFLUXDB_SUT_ORG environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
-    if context.influxdb.sut.bucket is None:
+    if not (context.influxdb.sut.bucket or "").strip():
         text = "INFLUXDB_SUT_BUCKET environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
@@ -158,6 +158,9 @@ def _setup_logging(context: Context):
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
+def _ensure_influx_initialized(context: Context):
+    if getattr(context, "influxdb", None) is None:
+        _load_env(context)
 
 def before_all(context: Context):
     """
@@ -182,7 +185,7 @@ def before_feature(context: Context, feature: Feature):
     logger.debug(f"=== starting feature: {feature.name} ===")
     #Only initialize influx when a feature actually needs it
     if "influx" in getattr(feature, "tags", []):
-        _load_env(context)
+        _ensure_influx_initialized(context)
 
 def after_feature(context: Context, feature: Feature):
     """
@@ -210,7 +213,8 @@ def before_scenario(context: Context, scenario: Scenario):
     :return:
     """
     logger.debug(f"-- starting scenario: {scenario.name}")
-
+    if "influx" in getattr(scenario, "tags", []):
+        _ensure_influx_initialized(context)
 
 def after_scenario(context: Context, scenario: Scenario):
     """
