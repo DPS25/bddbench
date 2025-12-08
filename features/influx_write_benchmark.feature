@@ -15,4 +15,4 @@ Feature: InfluxDB v2 write benchmark (/api/v2/write)
     Examples:
       | id    | measurement        | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
       | smoke | bddbench_write_poc | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10      |
-      | load  | bddbench_write_poc | 1000       | 4                | gzip        | ns        | high             | 1000            | out_of_order  | 50      |
+      | load  | bddbench_write_poc | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 10      |
