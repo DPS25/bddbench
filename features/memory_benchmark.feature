@@ -8,7 +8,6 @@ Feature: Memory benchmark (sysbench)
     Given sysbench is installed
     When I run a sysbench memory benchmark with mode "<mode>", access mode "<access_mode>", block size "<block_size>", total size "<total_size>", threads <threads> and time limit <time_limit_s> seconds
     Then I store the memory benchmark result as "<report_path>"
-    And I write the memory benchmark result to main influx measurement "bddbench_memory"
 
     Examples:
       | mode  | access_mode | block_size | total_size | threads | time_limit_s | report_path                   |
