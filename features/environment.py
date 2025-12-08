@@ -12,6 +12,14 @@ from src.formatter.AnsiColorFormatter import AnsiColorFormatter
 
 logger = logging.getLogger("bddbench.environment")
 
+def _load_dotenv_files():
+    """
+    Load dotenv files (repo defaults + generated/secret env) into process env.
+    This must NOT require any Influx settings.
+    """
+    load_dotenv(dotenv_path=Path(".env"), override=False)
+    load_dotenv(dotenv_path=Path(".env.generated"), override=False)
+    
 def _load_env(context: Context):
     """
     Load environment variables into the context.
@@ -19,9 +27,7 @@ def _load_env(context: Context):
     :return:
     """
 
-    dotenv_path = Path(".env")
-    logger.debug(f"Loading environment from {dotenv_path}")
-    load_dotenv(dotenv_path=dotenv_path)
+    # dotenv files are loaded in before_all(). Keep this function focused on Influx init.
 
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
     context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
@@ -70,8 +76,9 @@ def _load_env(context: Context):
         org=context.influxdb.main.org,
     )
     if not context.influxdb.main.client.ping():
-        logger.error("Cannot reach main InfluxDB endpoint")
-        exit(1)
+        text = "Cannot reach main INfluxDB endpoint"
+        logger.error(text)
+        raise AssertionError(text)
 
     logger.info(
         "successfully connected to main InfluxDB endpoint"
@@ -111,8 +118,9 @@ def _load_env(context: Context):
         org=context.influxdb.sut.org,
     )
     if not context.influxdb.sut.client.ping():
-        logger.error("Cannot reach SUT InfluxDB endpoint")
-        exit(1)
+        text = "Cannot reach SUT InfluxDB endpoint"
+        logger.error(text)
+        raise AssertionError(text)
     logger.info(
         "successfully connected to SUT InfluxDB endpoint"
     )
@@ -161,7 +169,7 @@ def before_all(context: Context):
     _setup_logging(context)
     logger.info("------------------------------------------------")
     logger.info("Starting BDD tests...")
-    _load_env(context)
+    _load_dotenv_files()
 
 
 def before_feature(context: Context, feature: Feature):
@@ -172,7 +180,9 @@ def before_feature(context: Context, feature: Feature):
     :return:
     """
     logger.debug(f"=== starting feature: {feature.name} ===")
-
+    #Only initialize influx when a feature actually needs it
+    if "influx" in getattr(feature, "tags", []):
+        _load_env(context)
 
 def after_feature(context: Context, feature: Feature):
     """
