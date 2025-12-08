@@ -132,39 +132,3 @@ def step_store_memory_result(context, report_path):
     path = Path(report_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-
-
-@then('I write the memory benchmark result to main influx measurement "{measurement}"')
-def step_write_to_main_influx(context, measurement):
-    data = getattr(context, "memory_benchmark", None)
-    if not data:
-        raise AssertionError("No memory benchmark found in context (did the When step run?)")
-
-    # requires your existing features/environment.py to have set:
-    # context.influxdb.main.write_api, context.influxdb.main.bucket, context.influxdb.main.org
-    main = context.influxdb.main
-
-    params = data["params"]
-    res = data["result"]
-    latency = res.get("latency_ms", {}) or {}
-
-    p = (
-        Point(measurement)
-        .tag("host", data.get("host") or "")
-        .tag("env_name", data.get("env_name") or "")
-        .tag("mode", params["mode"])
-        .tag("access_mode", params["access_mode"])
-        .tag("block_size", params["block_size"])
-        .tag("total_size", params["total_size"])
-        .tag("threads", str(params["threads"]))
-        .field("throughput_mib_s", float(res["throughput_mib_s"]))
-        .field("mib_transferred", float(res.get("mib_transferred", 0.0)))
-        .field("events", int(res.get("events", 0)))
-        .field("events_per_sec", float(res.get("events_per_sec", 0.0)))
-        .field("latency_avg_ms", float(latency.get("avg", 0.0)))
-        .field("latency_p95_ms", float(latency.get("p95", 0.0)))
-        .field("total_time_s", float(res.get("total_time_s", 0.0)))
-        .time(datetime.now(timezone.utc), WritePrecision.NS)
-    )
-
-    main.write_api.write(bucket=main.bucket, org=main.org, record=p)
