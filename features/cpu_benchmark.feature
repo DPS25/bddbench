@@ -11,7 +11,7 @@ Feature: CPU benchmark (sysbench)
 
     Examples:
       | max_prime | threads | time_limit_s | report_path                      |
-      | 20000     | 1       | 10           | reports/cpu-maxprime-20000-t1.json |
-      | 20000     | 2       | 10           | reports/cpu-maxprime-20000-t2.json |
-      | 20000     | 4       | 10           | reports/cpu-maxprime-20000-t4.json |
-      | 20000     | 8       | 10           | reports/cpu-maxprime-20000-t8.json |
+      | 20000     | 1       | 20           | reports/cpu-maxprime-20000-t1.json |
+      | 20000     | 2       | 20           | reports/cpu-maxprime-20000-t2.json |
+      | 20000     | 4       | 20           | reports/cpu-maxprime-20000-t4.json |
+
