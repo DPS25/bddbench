@@ -9,18 +9,33 @@
   outputs = { self, nixpkgs, secrets, ... }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
+      libPath = nixpkgs.lib.makeLibraryPath [
+    pkgs.systemd.dev
+    pkgs.gcc
+    pkgs.stdenv.cc.cc.lib
+    pkgs.zlib
+  ];
   in {
+   formatter.${system} = pkgs.nixfmt-tree;
+
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib];
+
+
+    env = {
+      NIX_LD_LIBRARY_PATH = libPath;
+      LD_LIBRARY_PATH = libPath;
+    };
+
+
+
 shellHook = ''
-  set -euo pipefail
-  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${"$"}{LD_LIBRARY_PATH:-}"
 
   echo "🔐 Loading secrets from ${secrets}/secrets"
   export SECRETS_DIR=${secrets}/secrets
 
-  # Force uv t use python provided by Nix (aavoid ~/.local/shaare/uv/... on NixOS)
+  # Force uv t use python provided by Nix (avoid ~/.local/share/uv/... on NixOS)
   export UV_PYTHON="${pkgs.python314FreeThreading}/bin/python3"
   export UV_PYTHON_DOWNLOADS=never
   export UV_PROJECT_ENVIRONMENT=".venv"
@@ -63,7 +78,6 @@ shellHook = ''
 
     if [ -f "$file" ]; then
       echo "🔑 Merging secrets from $(basename "$file")"
-
       sops -d "$file" | \
         yq -r --arg envprefix "$envprefix" '
           to_entries[] |
@@ -103,11 +117,14 @@ shellHook = ''
   # =====================================
   echo "🐍 Activating virtual environment..."
   if [ -f .venv/bin/activate ]; then
-    source .venv/bin/activate
+    echo "✅ .venv found."
+    source ./.venv/bin/activate
+    echo "✅ .venv activated."
   else
     echo "❌ .venv was not created (uv sync failed)."
     exit 1
   fi
+  echo "done."
 '';
 
 
