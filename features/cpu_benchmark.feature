@@ -10,7 +10,7 @@ Feature: CPU benchmark (sysbench)
     Then I store the cpu benchmark result as "<report_path>"
 
     Examples:
-      | max_prime | threads | time_limit_s | report_path                      |
+      | max_prime | threads | time_limit_s | report_path                        |
       | 20000     | 1       | 20           | reports/cpu-maxprime-20000-t1.json |
       | 20000     | 2       | 20           | reports/cpu-maxprime-20000-t2.json |
       | 20000     | 4       | 20           | reports/cpu-maxprime-20000-t4.json |
