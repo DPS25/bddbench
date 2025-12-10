@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from behave import when, then
+from behave import given, when, then
 
 
 def _run(cmd: list[str]) -> str:
