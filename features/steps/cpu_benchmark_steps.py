@@ -90,6 +90,14 @@ def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
 
     return result
 
+@given("sysbench is installed")
+def step_sysbench_installed(context):
+    try:
+        _run(["sysbench", "--version"])
+    except Exception as e:
+        raise AssertionError("sysbench not found. Add pkgs.sysbench to flake.nix") from e
+
+
 
 @when(
     "I run a sysbench cpu benchmark with max prime {max_prime:d}, "
