@@ -28,6 +28,34 @@ def _size_to_bytes(value: str) -> int:
     mult = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}[suffix]
     return int(num * mult)
 
+def _get_sut_ssh_target() -> str:
+    """
+    Determine where to run fio (on the SUT) via SSH.
+
+    Expected env vars (in .env, loaded by environment.py):
+      - SUT_SSH_HOST: hostname or IP of the SUT (e.g. 192.168.8.34)
+      - SUT_SSH_USER: (optional) SSH username; if unset, use default ssh user
+    """
+    host = os.getenv("SUT_SSH_HOST")
+    user = os.getenv("SUT_SSH_USER")
+
+    if not host:
+        raise AssertionError(
+            "SUT_SSH_HOST is not set. "
+            "Add it to your .env so we know which SUT to run fio on."
+        )
+
+    return f"{user}@{host}" if user else host
+
+
+def _run_on_sut(cmd: list[str]) -> subprocess.CompletedProcess:
+    """
+    Run a command on the SUT via ssh and return the CompletedProcess.
+    """
+    ssh_target = _get_sut_ssh_target()
+    ssh_cmd = ["ssh", ssh_target, "--"] + cmd
+    return _run(ssh_cmd)
+
 
 def _run(cmd: List[str]) -> subprocess.CompletedProcess:
     """
@@ -133,9 +161,15 @@ def _extract_fio_metrics(fio_json: Dict[str, Any]) -> Dict[str, Any]:
 @given("fio is installed")
 def step_fio_installed(context) -> None:
     try:
-        _run(["fio", "--version"])
+        #_run(["fio", "--version"])
+        _run_on_sut(["fio", "--version"])
+    #except Exception as e:
+    #    raise AssertionError("fio not found. Add pkgs.fio to flake.nix") from e
     except Exception as e:
-        raise AssertionError("fio not found. Add pkgs.fio to flake.nix") from e
+        raise AssertionError(
+            "fio not found on SUT. Ensure fio is installed in the SUT VM "
+            "and that SUT_SSH_HOST(/SUT_SSH_USER) are configured."
+        ) from e
 
 
 @when(
@@ -176,7 +210,8 @@ def step_run_fio_storage_benchmark(
     ]
     cmd.extend(_profile_to_fio_args(profile))
 
-    completed = _run(cmd)
+    #completed = _run(cmd)
+    completed = _run_on_sut(cmd)
 
     try:
         fio_json = json.loads(completed.stdout)
