@@ -96,7 +96,7 @@ def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
 @given("sysbench is installed")
 def step_sysbench_installed(context):
     try:
-        _run(["sysbench", "--version"])
+        _run_on_sut(["sysbench", "--version"])
     except Exception as e:
         raise AssertionError("sysbench not found on SUT.Install sysbench there or add pkgs.sysbench to flake.nix") from e
 
