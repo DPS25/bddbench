@@ -30,6 +30,23 @@ def _run(cmd: list[str]) -> str:
         raise AssertionError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{out}")
     return out
 
+def _sut_target() -> Optional[str]:
+    return os.getenv("SUT_SSH")
+
+def _run_on_sut(cmd: list[str]) -> str:
+    target = _sut_target()
+    if target:
+        ssh_cmd = ["ssh", target, "--", *cmd]
+        return _run(ssh_cmd) 
+    else:
+        return _run(cmd)
+
+def _sut_host_identifier() -> str:
+    target = _sut_target()
+    if target: 
+        return target
+    return platform.node()
+
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"raw": output}
 
@@ -81,7 +98,7 @@ def step_sysbench_installed(context):
     try:
         _run(["sysbench", "--version"])
     except Exception as e:
-        raise AssertionError("sysbench not found. Add pkgs.sysbench to flake.nix") from e
+        raise AssertionError("sysbench not found on SUT.Install sysbench there or add pkgs.sysbench to flake.nix") from e
 
 
 @when('I run a sysbench memory benchmark with mode "{mode}", access mode "{access_mode}", block size "{block_size}", total size "{total_size}", threads {threads:d} and time limit {time_limit_s:d} seconds')
@@ -102,12 +119,12 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
         "run",
     ]
 
-    output = _run(cmd)
+    output = _run_on_sut(cmd)
     parsed = _parse_sysbench_memory(output)
 
     context.memory_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": platform.node(),
+        "host": _sut_host_identifier(),
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "mode": mode,
