@@ -14,7 +14,7 @@ from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision, WriteApi
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from benchkit.state import ensure_run_id, register_created_bucket, register_written_data
 
 logger = logging.getLogger(f"bddbench.influx_multiple_bucket_steps")
 
@@ -50,6 +50,7 @@ def _build_point(
     tag_cardinality: int,
     time_ordering: str,
     precision: WritePrecision,
+    run_id: str | None = None,
 ) -> Point:
 
     device_id = idx % max(1, tag_cardinality)
@@ -66,6 +67,9 @@ def _build_point(
         ts = base_ts + idx
 
     p = Point(measurement).tag("device_id", f"dev-{device_id}")
+
+    if run_id:
+        p = p.tag("run_id", run_id)
 
     p = (
         p
@@ -104,6 +108,8 @@ def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: s
     client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
+    run_id = getattr(context, "run_id", "")
+
     p = (
         Point("bddbench_multi_write_result")
         .tag("source_measurement", str(meta.get("measurement", "")))
@@ -116,6 +122,7 @@ def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: s
         .tag("sut_org", str(meta.get("org", "")))
         .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
+        .tag("run_id", run_id or "")
         .field("bucket_count", int(meta.get("bucket_count", 0)))
         .field("total_points", int(meta.get("total_points", 0)))
         .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
@@ -149,6 +156,7 @@ def _run_duration_writer_worker(
     time_ordering: str,
     base_ts: int,
     stop_at: float,
+    run_id: str,
 ) -> List[BatchWriteMetrics]:
 
     metrics: List[BatchWriteMetrics] = []
@@ -167,6 +175,7 @@ def _run_duration_writer_worker(
                 tag_cardinality=tag_cardinality,
                 time_ordering=time_ordering,
                 precision=precision_enum,
+                run_id=run_id,
             )
             points.append(p)
 
@@ -229,8 +238,8 @@ def step_run_multi_bucket_write_benchmark(
     duration_s,
 ):
     url = context.influxdb.sut.url
-    token = context.influxdb.sut.token
     org = context.influxdb.sut.org
+    run_id = ensure_run_id(context)
 
     precision_enum = _precision_from_str(precision)
 
@@ -242,11 +251,15 @@ def step_run_multi_bucket_write_benchmark(
         bucket_name = f"{bucket_prefix}_{i}"
         try:
             buckets_api.create_bucket(bucket_name=bucket_name, org=org)
+            register_created_bucket("sut", bucket_name)
             logging.info(f"[multi-write-bench] Created bucket: {bucket_name}")
         except Exception as exc:
             logging.info(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
         created_buckets.append(bucket_name)
-
+        
+    for bn in created_buckets:
+        register_written_data("sut", bucket=bn, measurement=measurement, run_id=run_id)
+    
     if precision_enum == WritePrecision.NS:
         base_ts = time.time_ns()
     elif precision_enum == WritePrecision.MS:
@@ -281,6 +294,7 @@ def step_run_multi_bucket_write_benchmark(
                         time_ordering=time_ordering,
                         base_ts=base_ts,
                         stop_at=stop_at,
+                        run_id=run_id,
                     )
                 )
 
@@ -305,6 +319,7 @@ def step_run_multi_bucket_write_benchmark(
         "bucket": f"{bucket_prefix}_*",
         "org": org,
         "sut_url": url,
+        "run_id": run_id,
         "total_points": total_points,
         "total_duration_s": total_duration_s,
     }
