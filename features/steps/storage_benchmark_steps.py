@@ -185,6 +185,9 @@ def step_run_fio_storage_benchmark(
     Build and run a fio command according to the Scenario Outline parameters
     and store parsed results in context.storage_benchmark.
     """
+
+    _run_on_sut(["mkdir", "-p", target_dir])
+
     # Build fio command
     cmd: List[str] = [
         "fio",
@@ -204,7 +207,6 @@ def step_run_fio_storage_benchmark(
     ]
     cmd.extend(_profile_to_fio_args(profile))
 
-    #completed = _run(cmd)
     completed = _run_on_sut(cmd)
 
     try:

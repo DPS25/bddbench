@@ -11,8 +11,8 @@ Feature: Storage benchmark (fio)
 
     Examples:
       | profile   | target_dir          | file_size | block_size | jobs | iodepth | time_limit_s | report_path                         |
-      | seq-read  | /var/lib/influxdb  | 4G        | 1M         | 1    | 16      | 30           | reports/storage-read-seq.json       |
-      | seq-write | /var/lib/influxdb  | 4G        | 1M         | 1    | 16      | 30           | reports/storage-write-seq.json      |
-      | rand-read | /var/lib/influxdb  | 4G        | 4k         | 4    | 64      | 30           | reports/storage-read-rnd.json       |
-      | rand-write| /var/lib/influxdb  | 4G        | 4k         | 4    | 64      | 30           | reports/storage-write-rnd.json      |
-      | rand-rw   | /var/lib/influxdb  | 4G        | 4k         | 4    | 64      | 30           | reports/storage-randreadwrite.json  |
+      | seq-read  | /tmp/fio-test       | 4G        | 1M         | 1    | 16      | 30           | reports/storage-read-seq.json       |
+      | seq-write | /tmp/fio-test       | 4G        | 1M         | 1    | 16      | 30           | reports/storage-write-seq.json      |
+      | rand-read | /tmp/fio-test       | 4G        | 4k         | 4    | 64      | 30           | reports/storage-read-rnd.json       |
+      | rand-write| /tmp/fio-test       | 4G        | 4k         | 4    | 64      | 30           | reports/storage-write-rnd.json      |
+      | rand-rw   | /tmp/fio-test       | 4G        | 4k         | 4    | 64      | 30           | reports/storage-randreadwrite.json  |
