@@ -14,7 +14,7 @@ from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from benchkit.state import ensure_run_id, register_written_data
+from benchkit.state import ensure_run_id, register_written_data, register_main_result
 
 logger = logging.getLogger(f"bddbench.influx_write_steps")
 
@@ -150,6 +150,14 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     client.close()
 
     print("[write-bench] Exported write result to main Influx")
+
+    run_id = str(meta.get("run_id") or "")
+    if run_id:
+        register_main_result(
+            measurement="bddbench_write_result",
+            bucket=main_bucket,
+            run_id=run_id,
+        )
 
 def _run_writer_worker(
     writer_id: int,
