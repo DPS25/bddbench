@@ -106,12 +106,19 @@ def run_cleanup_cli(args) -> int:
                     continue
                 if item.get("target") != target:
                     continue
+                    
                 b = item.get("bucket")
                 m = item.get("measurement")
                 r = item.get("run_id")
-                if b and m and r:
-                    data_targets.append((b, m))
-                    run_ids.add(r)
+                
+                if not (b and m and r):
+                    continue
+
+                if measurements and m not in measurements:
+                    continue
+
+                data_targets.append((b,m))
+                run_ids.add(r)
 
         # If user passed measurement but no bucket: use buckets selection
         if measurements and buckets:
