@@ -96,10 +96,10 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
     to be set in the environment. If not set, the export is skipped.
     """
-    main_url = os.getenv("MAIN_INFLUX_URL")
-    main_token = os.getenv("MAIN_INFLUX_TOKEN")
-    main_org = os.getenv("MAIN_INFLUX_ORG")
-    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
+    main_url = os.getenv("INFLUXDB_MAIN_URL")
+    main_token = os.getenv("INFLUXDB_MAIN_TOKEN")
+    main_org = os.getenv("INFLUXDB_MAIN_ORG")
+    main_bucket = os.getenv("INFLUXDB_MAIN_BUCKET")
 
     if not main_url or not main_token or not main_org or not main_bucket:
         print(
