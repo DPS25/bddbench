@@ -47,25 +47,23 @@ def stop_presets(host: str, presets: List[str]) -> None:
             )
 
 
-def run_behave(feature: str, tags: Optional[str], name: Optional[str]) -> int:
+def run_behave(feature: str, tags: str | None, name: str | None) -> int:
     """
-    Run behave for the given feature file and either a scenario name OR tag expression.
-    Returns the behave exit code.
+    Run behave with the given feature/tags/name and return the exit code.
     """
-    cmd = ["behave", "-i", feature]
+    cmd = [sys.executable, "-m", "behave"]
 
+    if feature:
+        cmd.extend(["-i", feature])
+    if tags:
+        cmd.extend(["-t", tags])
     if name:
         cmd.extend(["-n", name])
-        print(f"[INFO] Running behave with scenario name filter: {name!r}")
-    elif tags:
-        cmd.extend(["-t", tags])
-        print(f"[INFO] Running behave with tag filter: {tags!r}")
-    else:
-        print("[INFO] Running behave without name or tag filters.")
 
-    print(f"[INFO] Running behave command: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
-    return result.returncode
+    print(f"[INFO] Running behave: {' '.join(cmd)}")
+    proc = subprocess.run(cmd)
+    return proc.returncode
+
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
