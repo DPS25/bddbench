@@ -12,6 +12,7 @@ from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from benchkit.state import ensure_run_id, register_main_result
 
 logger = logging.getLogger(f"bddbench.influx_query_steps")
 
@@ -255,7 +256,8 @@ def _export_query_result_to_main_influx(
             "[query-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
         )
         return
-
+    run_id = str(meta.get("run_id") or ensure_run_id(context))
+    
     scenario_id = None
     base_name = os.path.basename(outfile)
     if base_name.startswith("query-") and base_name.endswith(".json"):
@@ -293,6 +295,7 @@ def _export_query_result_to_main_influx(
         .tag("sut_org", str(meta.get("org", "")))
         .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
+        .tag("run_id", str(run_id))
         .field("total_runs", int(total_runs))
         .field("errors_count", int(errors_count))
         .field("error_rate", error_rate)
@@ -321,6 +324,11 @@ def _export_query_result_to_main_influx(
 
     logger.info("Exported query result to main Influx")
 
+    register_main_result(
+        measurement="bddbench_query_result",
+        bucket=main_bucket,
+        run_id=str(run_id),
+    )
 
 # ----------- Scenario Steps -------------
 
@@ -347,7 +355,8 @@ def step_run_query_benchmark(
       - bytes/rows
       - error_rate
     """
-
+    run_id = ensure_run_id(context)
+    
     flux = _build_flux_query(
         context.influxdb.sut.bucket,
         measurement,
@@ -387,6 +396,7 @@ def step_run_query_benchmark(
         "bucket": context.influxdb.sut.bucket,
         "org": context.influxdb.sut.org,
         "sut_url": context.influxdb.sut.url,
+        "run_id": run_id,
     }
     context.query_summary = _summarize_query_runs(runs)
 
