@@ -204,10 +204,16 @@ def step_run_fio_storage_benchmark(
         "--group_reporting",
         "--output-format=json",
         "--output=-",                       # write JSON to stdout
+        "--status-interval=0",              # disable progress output
     ]
     cmd.extend(_profile_to_fio_args(profile))
 
     completed = _run_on_sut(cmd)
+
+    if not completed.stdout.strip().startswith("{"):
+        raise AssertionError(
+            f"fio did not return JSON. Raw output:\n{completed.stdout}"
+        )
 
     try:
         fio_json = json.loads(completed.stdout)
