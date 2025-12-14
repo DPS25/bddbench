@@ -251,7 +251,7 @@ def _export_query_result_to_main_influx(
     main_bucket = context.influxdb.main.bucket
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        logging.info(
+        logger.info(
             "[query-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
         )
         return

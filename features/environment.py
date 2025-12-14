@@ -53,6 +53,7 @@ def _load_env(context: Context):
     context.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
     context.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
 
+
     if context.influxdb.main.url is None:
         text = "INFLUXDB_MAIN_URL environment variable must be set"
         logger.error(text)
@@ -69,6 +70,9 @@ def _load_env(context: Context):
         text = "INFLUXDB_MAIN_BUCKET environment variable must be set"
         logger.error(text)
         raise AssertionError(text)
+    logger.debug(f"MAIN InfluxDB URL: {context.influxdb.main.url}")
+    logger.debug(f"MAIN InfluxDB ORG: {context.influxdb.main.org}")
+    logger.debug(f"MAIN InfluxDB BUCKET: {context.influxdb.main.bucket}")
 
     context.influxdb.main.client = InfluxDBClient(
         url=context.influxdb.main.url,
@@ -130,6 +134,9 @@ def _load_env(context: Context):
     )
     context.influxdb.sut.query_api = context.influxdb.sut.client.query_api()
 
+    logger.debug(f"SUT InfluxDB URL: {context.influxdb.sut.url}")
+    logger.debug(f"SUT InfluxDB ORG: {context.influxdb.sut.org}")
+    logger.debug(f"SUT InfluxDB BUCKET: {context.influxdb.sut.bucket}")
 
 def _setup_logging(context: Context):
     """

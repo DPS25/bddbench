@@ -15,7 +15,7 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger(f"bddbench.influx_write_steps")
+logger = logging.getLogger(f"bddbench.steps.influx_write_steps")
 
 # ----------- Datatype ------------
 
@@ -107,7 +107,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
 
     if not main_url or not main_token or not main_org or not main_bucket:
         logging.info(
-            "[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
+            "MAIN_INFLUX_* not fully set – skipping export to main Influx"
         )
         return
 
@@ -120,9 +120,10 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
     summary = result.get("summary", {})
     latency_stats = summary.get("latency_stats", {})
     throughput = summary.get("throughput", {})
-
-    client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
-    write_api = client.write_api(write_options=SYNCHRONOUS)
+    logger.debug("exporting write benchmark result to main InfluxDB")
+    client = context.influxdb.main.client
+    logger.info(context.influxdb.main.org)
+    write_api = context.influxdb.main.write_api
 
     p = (
         Point("bddbench_write_result")
@@ -152,7 +153,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    logging.info("[write-bench] Exported write result to main Influx")
+    logger.info("Exported write result to main Influx")
 
 def _run_writer_worker(
     writer_id: int,
@@ -265,6 +266,7 @@ def step_run_write_benchmark(
       - Throughput (points/s)
       - Error-Rate
     """
+    logger.debug("starting generic write benchmark...")
     url = context.influxdb.sut.url
     token = context.influxdb.sut.token
     org = context.influxdb.sut.org
@@ -275,6 +277,7 @@ def step_run_write_benchmark(
             "INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET must be set"
         )
 
+    logger.debug("got SUT InfluxDB connection parameters")
     precision_enum = _precision_from_str(precision)
 
     _maybe_cleanup_before_run(context, measurement)
@@ -290,7 +293,7 @@ def step_run_write_benchmark(
         base_ts = int(time.time() * 1000)
     else:
         base_ts = int(time.time())
-
+    logger.debug(f"using base timestamp: {base_ts} ({precision_enum})")
     all_metrics: List[BatchWriteMetrics] = []
 
     started_at = time.perf_counter()
@@ -319,7 +322,7 @@ def step_run_write_benchmark(
             all_metrics.extend(fut.result())
 
     total_duration_s = time.perf_counter() - started_at
-
+    logger.debug(f"completed write benchmark in {total_duration_s:.3f} seconds")
     context.write_batches = all_metrics
     context.write_benchmark_meta = {
         "measurement": measurement,
@@ -360,12 +363,14 @@ def step_run_write_benchmark(
         "error_rate": error_rate,
         "errors_count": len(errors),
     }
+    logger.debug("generic write benchmark done")
 
 
 # ---------- write result ----------
 
 @then('I store the generic write benchmark result as "{outfile}"')
 def step_store_write_result(context, outfile):
+    logger.debug("storing benchmark result")
     batches: List[BatchWriteMetrics] = getattr(context, "write_batches", [])
     meta = getattr(context, "write_benchmark_meta", {})
     summary = getattr(context, "write_summary", {})
@@ -379,10 +384,11 @@ def step_store_write_result(context, outfile):
 
     out_path = Path(outfile)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
-
-    logging.info("=== Generic Write Benchmark Result ===")
-    logging.debug(json.dumps(result, indent=4))
+    logger.info(f"storing benchmark result: {out_path}")
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=4)
+    logger.debug("stored benchmark result")
+    logger.info("=== Generic Write Benchmark Result ===")
+    logger.debug(json.dumps(result, indent=4))
 
     _export_write_result_to_main_influx(result, outfile, context)
