@@ -2,7 +2,7 @@
 import argparse
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 
 
 def run_remote_systemctl(host: str, action: str, preset: str) -> None:
@@ -17,87 +17,120 @@ def run_remote_systemctl(host: str, action: str, preset: str) -> None:
 
 
 def start_presets(host: str, presets: List[str]) -> None:
+    """
+    Start all configured stress-ng presets on the given host.
+    If one preset fails to start, the function raises and the caller decides what to do.
+    """
     for preset in presets:
-        if not preset:
-            continue
-        run_remote_systemctl(host, "start", preset)
+        try:
+            run_remote_systemctl(host, "start", preset)
+        except subprocess.CalledProcessError as exc:
+            print(
+                f"[ERROR] Failed to start preset {preset} on {host}: "
+                f"Command exited with {exc.returncode}"
+            )
+            raise
 
 
 def stop_presets(host: str, presets: List[str]) -> None:
-    # in reverse order, just to be nice
-    for preset in reversed(presets):
-        if not preset:
-            continue
+    """
+    Try to stop all configured stress-ng presets on the given host.
+    Errors are logged as warnings but do not abort the script.
+    """
+    for preset in presets:
         try:
             run_remote_systemctl(host, "stop", preset)
         except subprocess.CalledProcessError as exc:
-            # don't kill the whole script if stopping fails, just warn
-            print(f"[WARN] Failed to stop preset {preset} on {host}: {exc}", file=sys.stderr)
+            print(
+                f"[WARN] Failed to stop preset {preset} on {host}: "
+                f"Command exited with {exc.returncode}"
+            )
 
 
-def run_behave(feature: str, tags: str | None, name: str | None) -> int:
+def run_behave(feature: str, tags: Optional[str], name: Optional[str]) -> int:
     """
-    Run behave with the given feature and optional tag / name filters.
+    Run behave for the given feature file and either a scenario name OR tag expression.
     Returns the behave exit code.
     """
     cmd = ["behave", "-i", feature]
 
-    # if a scenario name is given, prefer that
     if name:
         cmd.extend(["-n", name])
+        print(f"[INFO] Running behave with scenario name filter: {name!r}")
     elif tags:
         cmd.extend(["-t", tags])
+        print(f"[INFO] Running behave with tag filter: {tags!r}")
+    else:
+        print("[INFO] Running behave without name or tag filters.")
 
-    print(f"[INFO] Running behave: {' '.join(cmd)}")
-    proc = subprocess.run(cmd)
-    return proc.returncode
+    print(f"[INFO] Running behave command: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    return result.returncode
 
 
-def parse_args(argv=None) -> argparse.Namespace:
+def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run systemd stress-ng presets in parallel with a Behave benchmark."
+        description=(
+            "Run systemd-based stress-ng presets on a SUT host in parallel with "
+            "Behave write/query benchmarks."
+        )
     )
+
     parser.add_argument(
         "--host",
-        default="dsp25-sut-influx",
-        help="Host on which stress@*.service runs (default: dsp25-sut-influx)",
+        required=True,
+        help=(
+            "SSH target for the SUT host, e.g. 'nixos@192.168.8.132' or a host alias "
+            "that works from dsp25-main-influx."
+        ),
     )
     parser.add_argument(
         "--presets",
         default="",
-        help='Comma-separated list of stress presets, e.g. "cpu4,mem1g". '
-             "These must exist under /etc/stress-ng/<preset> on the host.",
+        help=(
+            "Comma-separated list of stress-ng presets to start via systemd, "
+            "e.g. 'cpu4,mem1g,io4'. These map to /etc/stress-ng/<preset> "
+            "and stress@<preset>.service on the SUT."
+        ),
     )
     parser.add_argument(
         "--feature",
         required=True,
-        help="Path to the Behave feature file, e.g. features/influx_query_benchmark.feature",
+        help="Path to the Behave feature file to run, e.g. "
+             "'features/influx_query_benchmark.feature'.",
     )
     parser.add_argument(
         "--tags",
-        default=None,
-        help="Optional Behave tag filter, e.g. 'influx_query' or 'influx_write and not slow'",
+        default="",
+        help=(
+            "Optional Behave tag expression used with '-t'. Ignored if --name "
+            "is provided."
+        ),
     )
     parser.add_argument(
         "--name",
-        default=None,
-        help='Optional Behave scenario name filter for "-n", e.g. '
-             '"Influx query benchmark under load". If set, overrides --tags.',
+        default="",
+        help=(
+            "Optional Behave scenario name used with '-n'. "
+            "If set, this takes precedence over --tags."
+        ),
     )
+
     return parser.parse_args(argv)
 
 
-def main(argv=None) -> None:
-    args = parse_args(argv)
+def main(argv: Optional[List[str]] = None) -> None:
+    args = parse_args(argv or sys.argv[1:])
 
-    presets = [p.strip() for p in args.presets.split(",") if p.strip()]
     host = args.host
+    presets = [p.strip() for p in args.presets.split(",") if p.strip()]
 
     print(f"[INFO] Stress host: {host}")
     print(f"[INFO] Stress presets: {presets if presets else 'none'}")
     print(f"[INFO] Feature: {args.feature}")
 
     exit_code = 1
+
     try:
         if presets:
             print("[INFO] Starting stress presets...")
@@ -105,7 +138,12 @@ def main(argv=None) -> None:
         else:
             print("[INFO] No stress presets configured, running benchmark without host stress.")
 
-        exit_code = run_behave(args.feature, args.tags, args.name)
+        exit_code = run_behave(
+            feature=args.feature,
+            tags=args.tags or None,
+            name=args.name or None,
+        )
+
     finally:
         if presets:
             print("[INFO] Stopping stress presets...")
