@@ -89,22 +89,17 @@ def _build_point(
     p = p.time(ts, precision)
     return p
 
-def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
+def _export_write_result_to_main_influx(context, result: Dict[str, Any], outfile: str) -> None:
     """
     Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
 
     Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
     to be set in the environment. If not set, the export is skipped.
     """
-    main_url = os.getenv("INFLUXDB_MAIN_URL")
-    main_token = os.getenv("INFLUXDB_MAIN_TOKEN")
-    main_org = os.getenv("INFLUXDB_MAIN_ORG")
-    main_bucket = os.getenv("INFLUXDB_MAIN_BUCKET")
-
-    if not main_url or not main_token or not main_org or not main_bucket:
-        print(
-            "[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
-        )
+    main = getattr(getattr(context, "influxdb", None), "main", None)
+    
+    if not main or not main.write_api or not main.org or not main.bucket:
+        print("[write-bench] MAIN influx not configured – skipping export")
         return
 
     scenario_id = None
@@ -117,9 +112,8 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     latency_stats = summary.get("latency_stats", {})
     throughput = summary.get("throughput", {})
 
-    client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
-    write_api = client.write_api(write_options=SYNCHRONOUS)
-
+    write_api = main.write_api
+    
     p = (
         Point("bddbench_write_result")
         # tags
@@ -146,8 +140,14 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
         .field("latency_median_s", float(latency_stats.get("median") or 0.0))
     )
 
-    write_api.write(bucket=main_bucket, org=main_org, record=p)
-    client.close()
+    rom influxdb_client.rest import ApiException
+    try:
+        write_api.write(bucket=main.bucket, org=main.org, record=p)
+    except ApiException as e:
+        print(f"[write-bench] Export to main failed: {e.status} {e.body}")
+        if os.getenv("BDDBENCH_FAIL_ON_MAIN_EXPORT", "0") == "1":
+            raise
+        return
 
     print("[write-bench] Exported write result to main Influx")
 
@@ -155,7 +155,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     if run_id:
         register_main_result(
             measurement="bddbench_write_result",
-            bucket=main_bucket,
+            bucket=main.bucket,
             run_id=run_id,
         )
 
@@ -395,4 +395,4 @@ def step_store_write_result(context, outfile):
     print("=== Generic Write Benchmark Result ===")
     print(json.dumps(result, indent=2))
 
-    _export_write_result_to_main_influx(result, outfile)
+    _export_write_result_to_main_influx(context, result, outfile)
