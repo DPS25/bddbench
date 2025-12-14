@@ -15,6 +15,7 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from benchkit.state import ensure_run_id, register_written_data, register_main_result
+from influxdb_client.rest import ApiException
 
 logger = logging.getLogger(f"bddbench.influx_write_steps")
 
@@ -89,12 +90,10 @@ def _build_point(
     p = p.time(ts, precision)
     return p
 
-def _export_write_result_to_main_influx(context, result: Dict[str, Any], outfile: str) -> None:
+def _export_write_result_to_main_influx(context: Context, result: Dict[str, Any], outfile: str) -> None:
     """
-    Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
-
-    Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
-    to be set in the environment. If not set, the export is skipped.
+    Exports a compact summary to MAIN influx using context.influxdb.main.
+    If MAIN isn't configured, export is skipped.
     """
     main = getattr(getattr(context, "influxdb", None), "main", None)
     
@@ -140,7 +139,6 @@ def _export_write_result_to_main_influx(context, result: Dict[str, Any], outfile
         .field("latency_median_s", float(latency_stats.get("median") or 0.0))
     )
 
-    rom influxdb_client.rest import ApiException
     try:
         write_api.write(bucket=main.bucket, org=main.org, record=p)
     except ApiException as e:
