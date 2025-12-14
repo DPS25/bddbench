@@ -204,7 +204,9 @@ def step_run_fio_storage_benchmark(
         "--group_reporting",
         "--output-format=json",
         "--output=-",                       # write JSON to stdout
-        "--status-interval=0",              # disable progress output
+        "--eta=never",                      # disable progress output
+        "--status-interval=999999",         # disable progress output
+
     ]
     cmd.extend(_profile_to_fio_args(profile))
 
