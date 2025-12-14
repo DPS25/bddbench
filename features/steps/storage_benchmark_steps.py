@@ -165,7 +165,6 @@ def step_fio_installed(context) -> None:
         raise AssertionError(f"SUT command failed: {e}") from e
 
 
-
 @when(
     'I run a fio storage benchmark with profile "{profile}", target directory "{target_dir}", '
     'file size "{file_size}", block size "{block_size}", jobs {jobs:d}, '
@@ -188,41 +187,44 @@ def step_run_fio_storage_benchmark(
 
     _run_on_sut(["mkdir", "-p", target_dir])
 
-    # Build fio command
+    # Write JSON to a file on the SUT, then cat it back.
+    out_file = f"{target_dir.rstrip('/')}/fio-result.json"
+
     cmd: List[str] = [
         "fio",
         "--name=storage-benchmark",
         f"--directory={target_dir}",
-        f"--size={file_size}",              # e.g. 4G
+        f"--size={file_size}",
         f"--runtime={time_limit_s}",
         "--time_based",
         f"--numjobs={jobs}",
         f"--iodepth={iodepth}",
-        f"--bs={block_size}",               # e.g. 4k / 1M
+        f"--bs={block_size}",
         "--ioengine=libaio",
-        "--direct=1",                       # bypass page cache
+        "--direct=1",
         "--group_reporting",
         "--output-format=json",
-        "--output=-",                       # write JSON to stdout
-        "--eta=never",                      # disable progress output
-        "--status-interval=999999",         # disable progress output
-
+        f"--output={out_file}",          # <-- CHANGED: JSON goes to file
+        "--eta=never",
+        "--status-interval=999999",
     ]
     cmd.extend(_profile_to_fio_args(profile))
 
-    completed = _run_on_sut(cmd)
+    # Run fio on the SUT
+    _run_on_sut(cmd)
 
-    if not completed.stdout.strip().startswith("{"):
-        raise AssertionError(
-            f"fio did not return JSON. Raw output:\n{completed.stdout}"
-        )
+    # Fetch JSON from the SUT file
+    completed = _run_on_sut(["cat", out_file])
+
+    raw = (completed.stdout or "") + (("\n" + completed.stderr) if completed.stderr else "")
+    if not (completed.stdout or "").lstrip().startswith("{"):
+        raise AssertionError(f"fio did not return JSON. Raw output:\n{raw}")
 
     try:
         fio_json = json.loads(completed.stdout)
     except json.JSONDecodeError as e:
         raise AssertionError(
-            "Failed to parse fio JSON output. "
-            "Check that --output-format=json is supported and stdout is valid JSON."
+            f"Failed to parse fio JSON output. Raw output:\n{raw}"
         ) from e
 
     metrics = _extract_fio_metrics(fio_json)
