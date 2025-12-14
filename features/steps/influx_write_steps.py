@@ -88,25 +88,25 @@ def _build_point(
 
 def _maybe_cleanup_before_run(context, measurement: str):
     # cleanup logic not implemented
-    print(
+    logging.debug(
         f"[write-bench] NOTE: cleanup for measurement={measurement} is not implemented here."
     )
 
 
-def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) -> None:
+def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, context: Context) -> None:
     """
     Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
 
     Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
     to be set in the environment. If not set, the export is skipped.
     """
-    main_url = os.getenv("MAIN_INFLUX_URL")
-    main_token = os.getenv("MAIN_INFLUX_TOKEN")
-    main_org = os.getenv("MAIN_INFLUX_ORG")
-    main_bucket = os.getenv("MAIN_INFLUX_BUCKET")
+    main_url = context.influxdb.main.url
+    main_token = context.influxdb.main.token
+    main_org = context.influxdb.main.org
+    main_bucket = context.influxdb.main.bucket
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        print(
+        logging.info(
             "[write-bench] MAIN_INFLUX_* not fully set – skipping export to main Influx"
         )
         return
@@ -152,7 +152,7 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str) ->
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    print("[write-bench] Exported write result to main Influx")
+    logging.info("[write-bench] Exported write result to main Influx")
 
 def _run_writer_worker(
     writer_id: int,
@@ -219,7 +219,7 @@ def _run_writer_worker(
                 status_code=500,
                 ok=False,
             )
-            print(f"[write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
+            logging.info(f"[write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
 
         metrics.append(m)
 
@@ -382,7 +382,7 @@ def step_store_write_result(context, outfile):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    print("=== Generic Write Benchmark Result ===")
-    print(json.dumps(result, indent=2))
+    logging.info("=== Generic Write Benchmark Result ===")
+    logging.debug(json.dumps(result, indent=4))
 
-    _export_write_result_to_main_influx(result, outfile)
+    _export_write_result_to_main_influx(result, outfile, context)

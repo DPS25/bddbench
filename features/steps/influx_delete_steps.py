@@ -217,7 +217,7 @@ def step_check_delete_latency(context: Context, max_ms: int) -> None:
         raise AssertionError("No delete metrics recorded on context.delete_metrics")
 
     latency_ms = metrics.latency_s * 1000.0
-    print(
+    logging.info(
         f"[delete-bench] measured delete latency: {latency_ms:.2f} ms "
         f"(max_ms from feature: {max_ms} ms – ignored for pass/fail)"
     )
