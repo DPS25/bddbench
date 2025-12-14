@@ -125,6 +125,47 @@ shellHook = ''
     exit 1
   fi
   echo "done."
+
+  cleanup() {
+  local sub="$1"
+  case "$sub" in
+    buckets)
+      bddbench cleanup \
+        --target sut \
+        --from-state \
+        --delete-buckets \
+        --yes
+      ;;
+    write_reports)
+      bddbench cleanup \
+        --target main \
+        --allow-main \
+        --from-state \
+        --delete-data \
+        --measurement bddbench_write_result \
+        --measurement bddbench_multi_write_result \
+        --yes
+      ;;
+    query_reports)
+      bddbench cleanup \
+        --target main \
+        --allow-main \
+        --from-state \
+        --delete-data \
+        --measurement bddbench_query_result \
+        --yes
+      ;;
+    all)
+      cleanup buckets
+      cleanup write_reports
+      cleanup query_reports
+      ;;
+    *)
+      echo "Usage: cleanup {buckets|write_reports|query_reports|all}"
+      return 1
+      ;;
+  esac
+}
 '';
 
 
