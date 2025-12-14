@@ -14,7 +14,7 @@ from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision, WriteApi
 from influxdb_client.client.write_api import SYNCHRONOUS
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from benchkit.state import ensure_run_id, register_created_bucket, register_written_data
+from benchkit.state import ensure_run_id, register_created_bucket, register_written_data, register_main_result
 
 logger = logging.getLogger(f"bddbench.influx_multiple_bucket_steps")
 
@@ -140,6 +140,12 @@ def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: s
 
     logging.info("[multi-write-bench] Exported multi-write result to main Influx")
 
+    if run_id:
+        register_main_result(
+            measurement="bddbench_multi_write_result",
+            bucket=main_bucket,
+            run_id=str(run_id),
+        )
 
 def _run_duration_writer_worker(
     writer_id: int,
