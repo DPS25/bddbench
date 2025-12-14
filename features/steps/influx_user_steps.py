@@ -20,7 +20,7 @@ from src.measurements.UserPerformancePoint import UserPerformancePoint
 logger = logging.getLogger("bddbench.influx_user_steps")
 
 
-# Datatypes
+# ---------------- Datatypes ----------------
 
 @dataclass
 class UserOpMetric:
@@ -29,17 +29,25 @@ class UserOpMetric:
     status_code: int
 
 
-# Helpers
+# ---------------- Helpers ----------------
 
-def _generate_credentials(complexity: str) -> str:
+def _scenario_id_from_outfile(outfile: str) -> str:
     """
-    Generate a username based on the desired complexity.
-    Only username complexity is varied here; password
-    management in InfluxDB v2 is typically token-based.
+    Mirror write/multi-bucket style:
+    scenario_id derived from report filename like:
+      reports/user-me-smoke.json          -> smoke
+      reports/user-lifecycle-heavy_crud.json -> heavy_crud
     """
+    base = os.path.basename(outfile)
+    for prefix in ("user-me-", "user-lifecycle-"):
+        if base.startswith(prefix) and base.endswith(".json"):
+            return base[len(prefix):-len(".json")]
+    return ""
+
+
+def _generate_username(complexity: str) -> str:
     base = f"bench_user_{uuid.uuid4().hex[:8]}"
     if complexity == "high":
-        # Add random special chars and length
         suffix = "".join(
             random.choices(
                 string.ascii_letters + string.digits + "!@#$%",
@@ -48,6 +56,19 @@ def _generate_credentials(complexity: str) -> str:
         )
         return f"{base}_{suffix}"
     return base
+
+
+def _generate_password(complexity: str) -> str:
+    """
+    In InfluxDB v2, auth is typically token-based, but we still model password
+    complexity as a benchmark dimension to satisfy the requirement.
+    """
+    base = uuid.uuid4().hex
+    if complexity == "high":
+        return base + "".join(
+            random.choices(string.ascii_letters + string.digits + "!@#$%^&*()", k=24)
+        )
+    return base[:12]
 
 
 def _run_me_worker(
@@ -64,7 +85,6 @@ def _run_me_worker(
     metrics: List[UserOpMetric] = []
     end_time = time.perf_counter() + duration
 
-    # Each worker gets its own client
     with InfluxDBClient(url=url, token=token, org=org, timeout=30000) as client:
         users_api = client.users_api()
 
@@ -78,7 +98,6 @@ def _run_me_worker(
                 t1 = time.perf_counter()
                 status = getattr(e, "status", 500)
                 metrics.append(UserOpMetric(latency_s=t1 - t0, ok=False, status_code=status))
-                # Avoid a tight error loop
                 time.sleep(0.01)
 
     return metrics
@@ -88,17 +107,12 @@ def _run_lifecycle_worker(
     url: str,
     token: str,
     org: str,
-    complexity: str,
+    username_complexity: str,
+    password_complexity: str,
     iterations: int,
 ) -> List[UserOpMetric]:
     """
-    Worker that creates, updates, finds, and deletes a user.
-
-    This implements a full CRUD-style lifecycle:
-      - Create user
-      - Update user (e.g. change name)
-      - Retrieve user (find)
-      - Delete user
+    Worker that creates, updates, retrieves, and deletes a user.
     """
     metrics: List[UserOpMetric] = []
 
@@ -106,23 +120,24 @@ def _run_lifecycle_worker(
         users_api = client.users_api()
 
         for _ in range(iterations):
-            username = _generate_credentials(complexity)
+            username = _generate_username(username_complexity)
+            _password = _generate_password(password_complexity)  # modeled dimension
+
             t0 = time.perf_counter()
             try:
-                # 1. Create
+                # 1) Create
                 user = users_api.create_user(name=username)
 
-                # 2. Update (change the name)
+                # 2) Update (change the name)
                 updated_name = f"{username}_upd"
                 user = users_api.update_user(user.id, name=updated_name)
 
-                # 3. Find (retrieve)
-                # Python client has find_users(), not find_user_by_id().
+                # 3) Retrieve (find by id)
                 found = users_api.find_users(id=user.id)
                 if not found or not getattr(found, "users", None):
                     raise RuntimeError(f"User {user.id} not found after update")
 
-                # 4. Delete
+                # 4) Delete
                 users_api.delete_user(user.id)
 
                 t1 = time.perf_counter()
@@ -151,8 +166,6 @@ def _summarize_and_store(
 
     total_ops = len(metrics)
     duration = meta.get("total_duration_s", 1.0)
-
-    # Avoid division by zero
     if duration <= 0:
         duration = 1.0
 
@@ -171,7 +184,6 @@ def _summarize_and_store(
         "error_count": len(errors),
     }
 
-    # Write JSON report
     out_path = Path(outfile)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -186,7 +198,7 @@ def _summarize_and_store(
         "created_at": time.time(),
     }
 
-    with out_path.open("w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         json.dump(final_report, f, indent=2)
 
     logger.info(f"User benchmark saved to {outfile}")
@@ -195,7 +207,8 @@ def _summarize_and_store(
 def _export_to_main_influx(context, outfile: str) -> None:
     """
     Reads context.user_bench_results and writes them to the
-    Main InfluxDB using UserPerformancePoint (Pydantic model).
+    Main InfluxDB using UserPerformancePoint.
+    Tag structure aligned with write/multi-bucket: includes scenario_id + sut_* tags.
     """
     if not hasattr(context, "user_bench_results"):
         return
@@ -204,30 +217,40 @@ def _export_to_main_influx(context, outfile: str) -> None:
     meta = data["meta"]
     stats = data["stats"]
 
+    scenario_id = _scenario_id_from_outfile(outfile)
+
     point_data = UserPerformancePoint(
         run_uuid=str(uuid.uuid4()),
         feature_name=os.path.basename(outfile),
-        sut=meta.get("sut_url", "unknown"),
+        sut=str(meta.get("sut_url", "unknown")),
         test_type="user_benchmark",
         time=datetime.now(timezone.utc),
 
-        operation=meta.get("operation", "unknown"),
-        complexity=meta.get("complexity", "low"),
-        concurrency=meta.get("concurrency", 1),
+        scenario_id=scenario_id,
 
-        throughput=data["throughput"],
-        latency_avg_ms=stats["avg"] * 1000.0,
-        latency_min_ms=stats["min"] * 1000.0,
-        latency_max_ms=stats["max"] * 1000.0,
-        error_count=data["error_count"],
+        operation=str(meta.get("operation", "unknown")),
+        username_complexity=str(meta.get("username_complexity", meta.get("complexity", "none"))),
+        password_complexity=str(meta.get("password_complexity", "none")),
+        concurrency=int(meta.get("concurrency", 1)),
+
+        sut_org=str(meta.get("sut_org", "")),
+        sut_bucket=str(meta.get("sut_bucket", "")),
+        sut_influx_url=str(meta.get("sut_url", "")),
+
+        throughput=float(data["throughput"]),
+        latency_avg_ms=float(stats["avg"]) * 1000.0,
+        latency_min_ms=float(stats["min"]) * 1000.0,
+        latency_max_ms=float(stats["max"]) * 1000.0,
+        error_count=int(data["error_count"]),
 
         extra_metrics={
             "total_ops": float(data["total_ops"]),
+            "total_duration_s": float(meta.get("total_duration_s", 0.0) or 0.0),
         },
     )
 
     main = context.influxdb.main
-    if main.client:
+    if getattr(main, "client", None):
         try:
             main.write_api.write(
                 bucket=main.bucket,
@@ -239,7 +262,7 @@ def _export_to_main_influx(context, outfile: str) -> None:
             logger.error(f"Failed to export to Main InfluxDB: {e}")
 
 
-# Behave Steps
+# ---------------- Behave Steps ----------------
 
 @when('I run a "/me" benchmark with {concurrent_clients:d} concurrent clients for {duration_s:d} seconds')
 def step_run_me_benchmark(context, concurrent_clients: int, duration_s: int) -> None:
@@ -255,7 +278,6 @@ def step_run_me_benchmark(context, concurrent_clients: int, duration_s: int) -> 
             executor.submit(_run_me_worker, i, url, token, org, duration_s)
             for i in range(concurrent_clients)
         ]
-
         for fut in as_completed(futures):
             all_metrics.extend(fut.result())
 
@@ -267,7 +289,10 @@ def step_run_me_benchmark(context, concurrent_clients: int, duration_s: int) -> 
         "target_duration": duration_s,
         "total_duration_s": total_time,
         "sut_url": url,
-        "complexity": "none",
+        "sut_org": getattr(context.influxdb.sut, "org", ""),
+        "sut_bucket": getattr(context.influxdb.sut, "bucket", ""),
+        "username_complexity": "none",
+        "password_complexity": "none",
     }
 
     context.last_user_metrics = all_metrics
@@ -275,12 +300,14 @@ def step_run_me_benchmark(context, concurrent_clients: int, duration_s: int) -> 
 
 
 @when(
-    'I run a user lifecycle benchmark with {complexity} username complexity, '
-    '{concurrent_clients:d} parallel threads for {iterations:d} iterations'
+    'I run a user lifecycle benchmark with username complexity "{username_complexity}", '
+    'password complexity "{password_complexity}", {concurrent_clients:d} parallel threads '
+    'for {iterations:d} iterations'
 )
 def step_run_lifecycle_benchmark(
     context,
-    complexity: str,
+    username_complexity: str,
+    password_complexity: str,
     concurrent_clients: int,
     iterations: int,
 ) -> None:
@@ -298,12 +325,12 @@ def step_run_lifecycle_benchmark(
                 url,
                 token,
                 org,
-                complexity,
+                username_complexity,
+                password_complexity,
                 iterations,
             )
             for _ in range(concurrent_clients)
         ]
-
         for fut in as_completed(futures):
             all_metrics.extend(fut.result())
 
@@ -315,7 +342,10 @@ def step_run_lifecycle_benchmark(
         "iterations_per_thread": iterations,
         "total_duration_s": total_time,
         "sut_url": url,
-        "complexity": complexity,
+        "sut_org": getattr(context.influxdb.sut, "org", ""),
+        "sut_bucket": getattr(context.influxdb.sut, "bucket", ""),
+        "username_complexity": username_complexity,
+        "password_complexity": password_complexity,
     }
 
     context.last_user_metrics = all_metrics
