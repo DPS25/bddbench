@@ -33,19 +33,17 @@ def _get_sut_ssh_target() -> str:
     Determine where to run fio (on the SUT) via SSH.
 
     Expected env vars (in .env, loaded by environment.py):
-      - SUT_SSH_HOST: hostname or IP of the SUT (e.g. 192.168.8.34)
-      - SUT_SSH_USER: (optional) SSH username; if unset, use default ssh user
+      - SUT_SSH: hostname or IP of the SUT (e.g. 192.168.8.34)
     """
-    host = os.getenv("SUT_SSH_HOST")
-    user = os.getenv("SUT_SSH_USER")
+    host = os.getenv("SUT_SSH")
 
     if not host:
         raise AssertionError(
-            "SUT_SSH_HOST is not set. "
+            "SUT_SSH is not set. "
             "Add it to your .env so we know which SUT to run fio on."
         )
 
-    return f"{user}@{host}" if user else host
+    return host
 
 
 def _run_on_sut(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -161,15 +159,11 @@ def _extract_fio_metrics(fio_json: Dict[str, Any]) -> Dict[str, Any]:
 @given("fio is installed")
 def step_fio_installed(context) -> None:
     try:
-        #_run(["fio", "--version"])
         _run_on_sut(["fio", "--version"])
-    #except Exception as e:
-    #    raise AssertionError("fio not found. Add pkgs.fio to flake.nix") from e
+    
     except Exception as e:
-        raise AssertionError(
-            "fio not found on SUT. Ensure fio is installed in the SUT VM "
-            "and that SUT_SSH_HOST(/SUT_SSH_USER) are configured."
-        ) from e
+        raise AssertionError(f"SUT command failed: {e}") from e
+
 
 
 @when(
