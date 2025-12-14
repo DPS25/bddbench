@@ -81,8 +81,11 @@ def run_cleanup_cli(args) -> int:
 
     with InfluxDBClient(url=conn.url, token=conn.token, org=conn.org) as client:
         buckets_api = client.buckets_api()
-        existing = buckets_api.find_buckets(org=conn.org).buckets or []
-        existing_names = [b.name for b in existing if getattr(b, "name", None)]
+        existing_names: List[str] = []
+
+        if args.bucket_prefix:
+            existing = buckets_api.find_buckets(org=conn.org).buckets or []
+            existing_names = [b.name for b in existing if getattr(b, "name", None)]
 
         # --- select bucket candidates ---
         buckets: List[str] = []
