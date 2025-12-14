@@ -128,13 +128,32 @@ shellHook = ''
 
   cleanup() {
   local sub="$1"
+  local mode="$2"   
+  local YES_FLAG=""
+
+  case "$mode" in
+    ""|--dryrun|dryrun)
+      ;;
+    --yes|yes|apply)
+      YES_FLAG="--yes"
+      ;;
+    *)
+      echo "Usage: cleanup {buckets|write_reports|query_reports|all} [--dryrun|--yes]"
+      echo "Examples:"
+      echo "  cleanup buckets          # dry-run"
+      echo "  cleanup buckets --dryrun # dry-run"
+      echo "  cleanup buckets --yes    # apply"
+      return 1
+      ;;
+  esac
+
   case "$sub" in
     buckets)
       bddbench cleanup \
         --target sut \
         --from-state \
         --delete-buckets \
-        --yes
+        $YES_FLAG
       ;;
     write_reports)
       bddbench cleanup \
@@ -144,7 +163,7 @@ shellHook = ''
         --delete-data \
         --measurement bddbench_write_result \
         --measurement bddbench_multi_write_result \
-        --yes
+        $YES_FLAG
       ;;
     query_reports)
       bddbench cleanup \
@@ -153,15 +172,15 @@ shellHook = ''
         --from-state \
         --delete-data \
         --measurement bddbench_query_result \
-        --yes
+        $YES_FLAG
       ;;
     all)
-      cleanup buckets
-      cleanup write_reports
-      cleanup query_reports
+      cleanup buckets "$mode"
+      cleanup write_reports "$mode"
+      cleanup query_reports "$mode"
       ;;
     *)
-      echo "Usage: cleanup {buckets|write_reports|query_reports|all}"
+      echo "Usage: cleanup {buckets|write_reports|query_reports|all} [--dryrun|--yes]"
       return 1
       ;;
   esac
