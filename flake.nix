@@ -20,6 +20,7 @@
 
     devShells.${system}.default = pkgs.mkShell {
       name = "env-with-secrets";
+      buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib pkgs.fio];
       buildInputs = [ pkgs.sops pkgs.yq pkgs.uv pkgs.python314FreeThreading pkgs.pkg-config pkgs.systemd.dev pkgs.gcc pkgs.stdenv.cc.cc.lib pkgs.zlib pkgs.sysbench];
 
 
