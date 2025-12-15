@@ -2,6 +2,7 @@ import logging, os
 from types import SimpleNamespace
 from dotenv import load_dotenv
 from pathlib import Path
+from influxdb_client.rest import ApiException
 
 from behave.model import Feature, Scenario, Step
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -12,6 +13,13 @@ from src.formatter.AnsiColorFormatter import AnsiColorFormatter
 
 logger = logging.getLogger("bddbench.environment")
 
+def _env_strip(name: str, default: str | None = None) -> str | None:
+    v = os.getenv(name, default)
+    if v is None:
+        return None
+    v = str(v).strip()
+    return v if v != "" else None
+
 def _load_dotenv_files():
     """
     Load dotenv files (repo defaults + generated/secret env) into process env.
@@ -19,7 +27,38 @@ def _load_dotenv_files():
     """
     load_dotenv(dotenv_path=Path(".env"), override=False)
     load_dotenv(dotenv_path=Path(".env.generated"), override=False)
-    
+
+def _validate_influx_auth(client: InfluxDBClient, label: str) -> None:
+    """
+    Validate that token/org actually works (not just ping).
+    We call an auth-protected endpoint. If token is wrong for this URL/org,
+    Influx returns 401.
+    """
+    try:
+        # Buckets listing is auth protected; enough to prove token works.
+        _ = client.buckets_api().find_buckets()
+    except ApiException as exc:
+        # Provide a clean, actionable message
+        raise AssertionError(
+            f"{label} Influx auth failed: HTTP {exc.status} {exc.reason}. "
+            f"Most likely token/org/url mismatch or token has insufficient permissions."
+        ) from exc
+    except Exception as exc:
+        raise AssertionError(
+            f"{label} Influx auth failed with unexpected error: {exc}"
+        ) from exc
+
+def _validate_bucket_exists(client: InfluxDBClient, org: str, bucket: str, label: str) -> None:
+    """
+    Optional: ensure the configured bucket exists. This prevents confusion later.
+    """
+    try:
+        b = client.buckets_api().find_bucket_by_name(bucket_name=bucket)
+    except Exception as exc:
+        raise AssertionError(f"{label}: failed to lookup bucket '{bucket}': {exc}") from exc
+    if b is None:
+        raise AssertionError(f"{label}: configured bucket '{bucket}' does not exist (org='{org}').")
+
 def _load_env(context: Context):
     """
     Load environment variables into the context.
@@ -48,11 +87,10 @@ def _load_env(context: Context):
     context.influxdb.sut.query_api = None
 
     # ----- main influx DB -----
-    context.influxdb.main.url = os.getenv("INFLUXDB_MAIN_URL", "http://localhost:8086")
-    context.influxdb.main.token = os.getenv("INFLUXDB_MAIN_TOKEN", None)
-    context.influxdb.main.org = os.getenv("INFLUXDB_MAIN_ORG", None)
-    context.influxdb.main.bucket = os.getenv("INFLUXDB_MAIN_BUCKET", None)
-
+    context.influxdb.main.url = _env_strip("INFLUXDB_MAIN_URL", "http://localhost:8086")
+    context.influxdb.main.token = _env_strip("INFLUXDB_MAIN_TOKEN", None)
+    context.influxdb.main.org = _env_strip("INFLUXDB_MAIN_ORG", None)
+    context.influxdb.main.bucket = _env_strip("INFLUXDB_MAIN_BUCKET", None)
 
     if context.influxdb.main.url is None:
         text = "INFLUXDB_MAIN_URL environment variable must be set"
@@ -79,24 +117,28 @@ def _load_env(context: Context):
         token=context.influxdb.main.token,
         org=context.influxdb.main.org,
     )
-    if not context.influxdb.main.client.ping():
-        text = "Cannot reach main INfluxDB endpoint"
-        logger.error(text)
-        raise AssertionError(text)
 
-    logger.info(
-        "successfully connected to main InfluxDB endpoint"
+    if not context.influxdb.main.client.ping():
+        raise AssertionError("Cannot reach MAIN InfluxDB endpoint (ping failed).")
+    _validate_influx_auth(context.influxdb.main.client, label="MAIN")
+    _validate_bucket_exists(
+        context.influxdb.main.client,
+        org=context.influxdb.main.org,
+        bucket=context.influxdb.main.bucket,
+        label="MAIN",
     )
+    logger.info("successfully connected and authenticated to MAIN InfluxDB")
 
     context.influxdb.main.write_api = context.influxdb.main.client.write_api(
         write_options=SYNCHRONOUS
     )
     context.influxdb.main.query_api = context.influxdb.main.client.query_api()
+    
     # ----- SUT influx DB -----
-    context.influxdb.sut.url = os.getenv("INFLUXDB_SUT_URL", "http://localhost:8086")
-    context.influxdb.sut.token = os.getenv("INFLUXDB_SUT_TOKEN", None)
-    context.influxdb.sut.org = os.getenv("INFLUXDB_SUT_ORG", None)
-    context.influxdb.sut.bucket = os.getenv("INFLUXDB_SUT_BUCKET", None)
+    context.influxdb.sut.url = _env_strip("INFLUXDB_SUT_URL", "http://localhost:8086")
+    context.influxdb.sut.token = _env_strip("INFLUXDB_SUT_TOKEN", None)
+    context.influxdb.sut.org = _env_strip("INFLUXDB_SUT_ORG", None)
+    context.influxdb.sut.bucket = _env_strip("INFLUXDB_SUT_BUCKET", None)
 
     if context.influxdb.sut.url is None:
         text = "INFLUXDB_SUT_URL environment variable must be set"
@@ -122,12 +164,15 @@ def _load_env(context: Context):
         org=context.influxdb.sut.org,
     )
     if not context.influxdb.sut.client.ping():
-        text = "Cannot reach SUT InfluxDB endpoint"
-        logger.error(text)
-        raise AssertionError(text)
-    logger.info(
-        "successfully connected to SUT InfluxDB endpoint"
+        raise AssertionError("Cannot reach SUT InfluxDB endpoint (ping failed).")
+    _validate_influx_auth(context.influxdb.sut.client, label="SUT")
+    _validate_bucket_exists(
+        context.influxdb.sut.client,
+        org=context.influxdb.sut.org,
+        bucket=context.influxdb.sut.bucket,
+        label="SUT",
     )
+    logger.info("successfully connected and authenticated to SUT InfluxDB")
 
     context.influxdb.sut.write_api = context.influxdb.sut.client.write_api(
         write_options=SYNCHRONOUS
@@ -168,6 +213,13 @@ def _setup_logging(context: Context):
 def _ensure_influx_initialized(context: Context):
     if getattr(context, "influxdb", None) is None:
         _load_env(context)
+        return
+    if getattr(getattr(context.influxdb, "sut", None), "client", None) is None:
+        _load_env(context)
+        return
+    if getattr(getattr(context.influxdb, "main", None), "client", None) is None:
+        _load_env(context)
+        return
 
 def before_all(context: Context):
     """
