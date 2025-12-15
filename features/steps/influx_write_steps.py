@@ -5,6 +5,7 @@ import json
 import math
 import random
 import statistics
+from influxdb_client.rest import ApiException
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any
@@ -97,18 +98,19 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
     """
     Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
 
-    Expects MAIN_INFLUX_URL, MAIN_INFLUX_TOKEN, MAIN_INFLUX_ORG, MAIN_INFLUX_BUCKET
-    to be set in the environment. If not set, the export is skipped.
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning
     """
     main_url = context.influxdb.main.url
     main_token = context.influxdb.main.token
     main_org = context.influxdb.main.org
     main_bucket = context.influxdb.main.bucket
+    strict = (os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes"))
 
     if not main_url or not main_token or not main_org or not main_bucket:
-        logging.info(
-            "MAIN_INFLUX_* not fully set – skipping export to main Influx"
-        )
+        logging.info("INFLUXDB_MAIN_* not fully set – skipping export to MAIN Influx")
         return
 
     scenario_id = None
@@ -121,8 +123,6 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
     latency_stats = summary.get("latency_stats", {})
     throughput = summary.get("throughput", {})
     logger.debug("exporting write benchmark result to main InfluxDB")
-    client = context.influxdb.main.client
-    logger.info(context.influxdb.main.org)
     write_api = context.influxdb.main.write_api
 
     p = (
@@ -150,11 +150,20 @@ def _export_write_result_to_main_influx(result: Dict[str, Any], outfile: str, co
         .field("latency_median_s", float(latency_stats.get("median") or 0.0))
     )
 
-    write_api.write(bucket=main_bucket, org=main_org, record=p)
-    client.close()
-
-    logger.info("Exported write result to main Influx")
-
+    try:
+        write_api.write(bucket=main_bucket, org=main_org, record=p)
+        logger.info("Exported write result to MAIN Influx")
+    except ApiException as exc:
+        msg = f"[write-bench] MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f"[write-bench] MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger.warning(msg)
+        
 def _run_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
@@ -385,10 +394,10 @@ def step_store_write_result(context, outfile):
     out_path = Path(outfile)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"storing benchmark result: {out_path}")
-    with open(out_path, "w") as f:
-        json.dump(result, f, indent=4)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
     logger.debug("stored benchmark result")
     logger.info("=== Generic Write Benchmark Result ===")
-    logger.debug(json.dumps(result, indent=4))
+    logger.debug(json.dumps(result, indent=2))
 
     _export_write_result_to_main_influx(result, outfile, context)
