@@ -70,8 +70,11 @@ def _load_env(context: Context):
         org=context.influxdb.main.org,
     )
     if not context.influxdb.main.client.ping():
-        logger.error("Cannot reach main InfluxDB endpoint")
-        exit(1)
+        logger.warning("Cannot reach main InfluxDB endpoint (continuing without MAIN export)") ###
+        context.influxdb.main.client = None
+        context.influxdb.main.write_api = None
+        context.influxdb.main.query_api = None
+        return
 
     logger.info(
         "successfully connected to main InfluxDB endpoint"
