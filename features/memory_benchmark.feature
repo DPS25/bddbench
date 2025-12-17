@@ -1,9 +1,9 @@
+@memory
 Feature: Memory benchmark (sysbench)
   In order to interpret ingestion and query performance
   As a test engineer
   I want to measure memory throughput and latency of the benchmark VM
 
-  @memory
   Scenario Outline: sysbench memory benchmark
     Given sysbench is installed
     When I run a sysbench memory benchmark with mode "<mode>", access mode "<access_mode>", block size "<block_size>", total size "<total_size>", threads <threads> and time limit <time_limit_s> seconds
