@@ -1,4 +1,4 @@
-@write
+@write @singlebucket
 Feature: InfluxDB v2 write benchmark (/api/v2/write)
   In order to evaluate write performance characteristics
   As a test engineer
