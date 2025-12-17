@@ -264,4 +264,4 @@ def step_store_delete_result(context: Context, outfile: str) -> None:
     logger.info("=== Generic Delete Benchmark Result ===")
     logger.info(json.dumps(result, indent=2))
 
-    _export_delete_result_to_main_influx(meta, metrics, outfile)
+    _export_delete_result_to_main_influx(context=context, meta=meta, metrics=metrics, outfile=outfile)
