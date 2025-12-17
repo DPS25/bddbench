@@ -21,5 +21,5 @@ Feature: InfluxDB v2 multi-bucket write benchmark (/api/v2/write)
     @experimental
     Examples:
       | id    | measurement         | bucket_prefix             | bucket_count | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | duration_s |
-      | smoke | bddbench_multiwrite | bddbench_mb_smoke         | 3            | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10         |
+      | smoke | bddbench_multiwrite | bddbench_mb_smoke         | 5            | 250        | 2                | gzip        | ns        | medium           | 100             | out_of_order  | 15         |
       | load  | bddbench_multiwrite | bddbench_mb_experimental  | 10           | 1000       | 2                | gzip        | ns        | high             | 1000            | out_of_order  | 60         |
