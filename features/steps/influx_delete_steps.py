@@ -109,7 +109,7 @@ def _export_delete_result_to_main_influx(
         .field("points_before", int(metrics.points_before))
         .field("points_after", int(metrics.points_after))
         .field("deleted_points", int(metrics.points_before - metrics.points_after))
-        .field("expected_points", int(meta.get("expected_points", 0)))
+        .field("expected_points", int(meta.get("expected_points") or 0))
         .field("latency_s", float(metrics.latency_s))
         .field("status_code", int(metrics.status_code))
         .field("ok", bool(metrics.ok))
