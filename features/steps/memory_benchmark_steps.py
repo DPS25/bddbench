@@ -7,7 +7,12 @@ from typing import Any, Dict, Optional
 
 from behave import given, when, then
 
-from utils import _run_on_sut, _sut_host_identifier, _size_to_bytes, write_json_report
+from src.utils import (
+    _run_on_sut, 
+    _sut_host_identifier, 
+    _size_to_bytes, 
+    write_json_report,
+)
 
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"raw": output}

@@ -8,7 +8,7 @@ from behave import when, then
 from behave.runner import Context
 from influxdb_client.rest import ApiException
 
-from utils import (
+from src.utils import (
     write_json_report,
     scenario_id_from_outfile,
     main_influx_is_configured,

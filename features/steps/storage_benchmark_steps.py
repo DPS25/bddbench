@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from behave import given, when, then
-from utils import _run_on_sut, _size_to_bytes, write_json_report
+from src.utils import (
+    _run_on_sut, 
+    _size_to_bytes, 
+    write_json_report,
+)
 
 def _profile_to_fio_args(profile: str) -> List[str]:
     """

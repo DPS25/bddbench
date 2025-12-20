@@ -12,7 +12,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb_client.rest import ApiException
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from utils import (
+from src.utils import (
     influx_precision_from_str,
     base_timestamp_for_precision,
     build_benchmark_point,

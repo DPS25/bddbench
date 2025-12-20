@@ -14,7 +14,7 @@ from behave import when, then
 from influxdb_client import InfluxDBClient
 
 from src.measurements.UserPerformancePoint import UserPerformancePoint
-from utils import (
+from src.utils import (
     write_json_report,
     scenario_id_from_outfile,
     main_influx_is_configured,

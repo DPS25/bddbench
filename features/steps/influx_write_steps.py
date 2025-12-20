@@ -10,7 +10,7 @@ from behave import when, then
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
-from utils import (
+from src.utils import (
     influx_precision_from_str,
     base_timestamp_for_precision,
     build_benchmark_point,
