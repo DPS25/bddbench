@@ -1,22 +1,30 @@
 import logging
 import os
 import time
-import math
-import random
-import json
 import statistics
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import List, Dict, Any
 
 from behave import when, then
 from behave.runner import Context
-from influxdb_client import InfluxDBClient, Point, WritePrecision, WriteApi
+from influxdb_client import InfluxDBClient, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client.rest import ApiException
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from utils import (
+    influx_precision_from_str,
+    base_timestamp_for_precision,
+    build_benchmark_point,
+    write_json_report,
+    scenario_id_from_outfile,
+    main_influx_is_configured,
+    get_main_influx_write_api,
+    build_multi_write_export_point,
+)
 
-logger = logging.getLogger(f"bddbench.influx_multiple_bucket_steps")
+logger = logging.getLogger("bddbench.steps.influx_multi_bucket_steps")
+
 
 # ----------- Datatypes ------------
 
@@ -31,118 +39,77 @@ class BatchWriteMetrics:
 
 # ---------- Helpers ----------
 
-def _precision_from_str(p: str) -> WritePrecision:
-    p = p.lower()
-    if p == "ns":
-        return WritePrecision.NS
-    if p == "ms":
-        return WritePrecision.MS
-    if p == "s":
-        return WritePrecision.S
-    raise ValueError(f"Unsupported precision: {p}")
+def _export_multi_write_result_to_main_influx(
+    result: Dict[str, Any],
+    outfile: str,
+    context: Context,
+) -> None:
+    """
+    Sends a compact summary of the multi-bucket write benchmark result to the
+    'main' InfluxDB.
 
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning.
+    """
+    if not main_influx_is_configured(context):
+        logger.info("[multi-write-bench] MAIN influx not configured – skipping export")
+        return
 
-def _build_point(
-    measurement: str,
-    base_ts: int,
-    idx: int,
-    point_complexity: str,
-    tag_cardinality: int,
-    time_ordering: str,
-    precision: WritePrecision,
-) -> Point:
+    main = context.influxdb.main
+    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
 
-    device_id = idx % max(1, tag_cardinality)
-
-    if time_ordering == "out_of_order":
-        if precision == WritePrecision.NS:
-            jitter = random.randint(-1_000_000_000, 1_000_000_000)
-        elif precision == WritePrecision.MS:
-            jitter = random.randint(-1000, 1000)
-        else:
-            jitter = random.randint(-1, 1)
-        ts = base_ts + jitter
-    else:
-        ts = base_ts + idx
-
-    p = Point(measurement).tag("device_id", f"dev-{device_id}")
-
-    p = (
-        p
-        .field("value", float(idx))
-        .field("seq", idx)
-    )
-
-    if point_complexity == "high":
-        p = (
-            p
-            .field("aux1", float(idx % 100))
-            .field("aux2", math.sin(idx))
-            .field("aux3", math.cos(idx))
-        )
-
-    p = p.time(ts, precision)
-    return p
-
-
-def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: str, context: Context) -> None:
-    main_url = context.influxdb.main.url
-    main_token = context.influxdb.main.token
-    main_org = context.influxdb.main.org
-    main_bucket = context.influxdb.main.bucket
-
-    scenario_id = None
-    base_name = os.path.basename(outfile)
-    if base_name.startswith("multi-write-") and base_name.endswith(".json"):
-        scenario_id = base_name[len("multi-write-"):-len(".json")]
+    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        logger.info("[multi-write-bench] MAIN write_api missing – skipping export")
+        return
 
     meta = result.get("meta", {})
     summary = result.get("summary", {})
-    latency_stats = summary.get("latency_stats", {})
-    throughput = summary.get("throughput", {})
+    scenario_id = scenario_id_from_outfile(outfile, prefixes=("multi-write-",))
 
-    client = InfluxDBClient(url=main_url, token=main_token, org=main_org)
-    write_api = client.write_api(write_options=SYNCHRONOUS)
+    p = build_multi_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
 
-    p = (
-        Point("bddbench_multi_write_result")
-        .tag("source_measurement", str(meta.get("measurement", "")))
-        .tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
-        .tag("compression", str(meta.get("compression", "")))
-        .tag("precision", str(meta.get("precision", "")))
-        .tag("point_complexity", str(meta.get("point_complexity", "")))
-        .tag("time_ordering", str(meta.get("time_ordering", "")))
-        .tag("sut_bucket_pattern", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
-        .tag("scenario_id", scenario_id or "")
-        .field("bucket_count", int(meta.get("bucket_count", 0)))
-        .field("total_points", int(meta.get("total_points", 0)))
-        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
-        .field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
-        .field("error_rate", float(summary.get("error_rate", 0.0)))
-        .field("errors_count", int(summary.get("errors_count", 0)))
-        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
-        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
-        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
-        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
-    )
+    try:
+        write_api.write(bucket=main.bucket, org=main.org, record=p)
+        logger.info("[multi-write-bench] Exported multi-write result to main Influx")
+    except ApiException as exc:
+        msg = f"[multi-write-bench] MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f"[multi-write-bench] MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger.warning(msg)
 
-    write_api.write(bucket=main_bucket, org=main_org, record=p)
-    client.close()
 
-    logger.info("[multi-write-bench] Exported multi-write result to main Influx")
+def _create_bucket_compat(buckets_api: Any, bucket_name: str, org: str) -> None:
+    """
+    InfluxDB client versions differ: some expect org=..., others org_id=...
+    We try both to avoid hard failures.
+    """
+    try:
+        buckets_api.create_bucket(bucket_name=bucket_name, org=org)
+    except TypeError:
+        raise
 
+def _resolve_org_id(client: InfluxDBClient, org: str) -> str:
+    orgs_api = client.organizations_api()
+    orgs = orgs_api.find_organizations(org=org)
+    if not orgs:
+        raise RuntimeError(f"Could not resolve org_id for org name {org!r}")
+    return orgs[0].id
 
 def _run_duration_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
-    write_api: WriteApi,
     bucket: str,
     org: str,
     measurement: str,
     batch_size: int,
-    compression: str,  
     precision_enum: WritePrecision,
     point_complexity: str,
     tag_cardinality: int,
@@ -150,16 +117,23 @@ def _run_duration_writer_worker(
     base_ts: int,
     stop_at: float,
 ) -> List[BatchWriteMetrics]:
-
+    """
+    A writer repeatedly writes batches of points until stop_at is reached and
+    returns a list of BatchWriteMetrics for all written batches.
+    """
     metrics: List[BatchWriteMetrics] = []
-
     batch_index = 0
+
+    # Thread-local WriteApi (avoid sharing a single instance across threads)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
 
     while time.perf_counter() < stop_at:
         points = []
         for i in range(batch_size):
+            # Keep the original scheme; if you want globally unique idx across writers,
+            # you can incorporate writer_id into global_idx.
             global_idx = batch_index * batch_size + i
-            p = _build_point(
+            p = build_benchmark_point(
                 measurement=measurement,
                 base_ts=base_ts,
                 idx=global_idx,
@@ -168,6 +142,7 @@ def _run_duration_writer_worker(
                 time_ordering=time_ordering,
                 precision=precision_enum,
             )
+            p = p.tag("writer_id", str(writer_id))
             points.append(p)
 
         t0 = time.perf_counter()
@@ -178,25 +153,28 @@ def _run_duration_writer_worker(
                 record=points,
             )
             t1 = time.perf_counter()
-            latency_s = t1 - t0
             m = BatchWriteMetrics(
                 batch_index=batch_index,
-                latency_s=latency_s,
+                latency_s=(t1 - t0),
                 points=len(points),
                 status_code=204,
                 ok=True,
             )
         except Exception as exc:
             t1 = time.perf_counter()
-            latency_s = t1 - t0
             m = BatchWriteMetrics(
                 batch_index=batch_index,
-                latency_s=latency_s,
+                latency_s=(t1 - t0),
                 points=len(points),
                 status_code=500,
                 ok=False,
             )
-            logger.info(f"[multi-write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
+            logger.info(
+                "[multi-write-bench] writer=%s batch=%s failed: %s",
+                writer_id,
+                batch_index,
+                exc,
+            )
 
         metrics.append(m)
         batch_index += 1
@@ -215,126 +193,146 @@ def _run_duration_writer_worker(
     'and time ordering "{time_ordering}" for {duration_s:d} seconds'
 )
 def step_run_multi_bucket_write_benchmark(
-    context,
-    measurement,
-    bucket_prefix,
-    bucket_count,
-    batch_size,
-    parallel_writers,
-    compression,
-    precision,
-    point_complexity,
-    tag_cardinality,
-    time_ordering,
-    duration_s,
+    context: Context,
+    measurement: str,
+    bucket_prefix: str,
+    bucket_count: int,
+    batch_size: int,
+    parallel_writers: int,
+    compression: str,
+    precision: str,
+    point_complexity: str,
+    tag_cardinality: int,
+    time_ordering: str,
+    duration_s: int,
 ):
     url = context.influxdb.sut.url
     token = context.influxdb.sut.token
     org = context.influxdb.sut.org
 
-    precision_enum = _precision_from_str(precision)
+    if not url or not token or not org:
+        raise RuntimeError("INFLUX_URL, INFLUX_TOKEN and INFLUX_ORG must be set for the SUT")
 
-    client = context.influxdb.sut.client
-    buckets_api = client.buckets_api()
+    precision_enum = influx_precision_from_str(precision)
+    base_ts = base_timestamp_for_precision(precision_enum)
 
-    created_buckets: List[str] = []
-    for i in range(bucket_count):
-        bucket_name = f"{bucket_prefix}_{i}"
-        try:
-            buckets_api.create_bucket(bucket_name=bucket_name, org=org)
-            logger.info(f"[multi-write-bench] Created bucket: {bucket_name}")
-        except Exception as exc:
-            logger.info(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
-        created_buckets.append(bucket_name)
+    enable_gzip = compression == "gzip"
+    bench_client = InfluxDBClient(url=url, token=token, org=org, enable_gzip=enable_gzip)
 
-    if precision_enum == WritePrecision.NS:
-        base_ts = time.time_ns()
-    elif precision_enum == WritePrecision.MS:
-        base_ts = int(time.time() * 1000)
-    else:
-        base_ts = int(time.time())
+    try:
+        buckets_api = bench_client.buckets_api()
 
-    stop_at = time.perf_counter() + duration_s
+        created_buckets: List[str] = []
+        for i in range(bucket_count):
+            org_id = None
+            try:
+                org_id = _resolve_org_id(bench_client, org)
+            except Exception as exc:
+                logger.info("[multi-write-bench] Could not resolve org_id (will try org=... path): %s", exc)
 
-    all_metrics: List[BatchWriteMetrics] = []
+        for i in range(bucket_count):
+            bucket_name = f"{bucket_prefix}_{i}"
+            try:
+                _create_bucket_compat(buckets_api, bucket_name=bucket_name, org=org)
+                try:
+                    _create_bucket_compat(buckets_api, bucket_name=bucket_name, org=org)
+                except TypeError:
+                    if not org_id:
+                        raise
+                    buckets_api.create_bucket(bucket_name=bucket_name, org_id=org_id)
+                logger.info("[multi-write-bench] Created bucket: %s", bucket_name)
+            except Exception as exc:
+                # If it already exists, the benchmark can still proceed
+                logger.info("[multi-write-bench] Bucket %s may already exist: %s", bucket_name, exc)
+            created_buckets.append(bucket_name)
 
-    started_at = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=bucket_count * parallel_writers) as executor:
-        futures = []
-        for bucket_idx, bucket_name in enumerate(created_buckets):
-            for w in range(parallel_writers):
-                writer_id = bucket_idx * parallel_writers + w
-                futures.append(
-                    executor.submit(
-                        _run_duration_writer_worker,
-                        writer_id=writer_id,
-                        client=client,
-                        write_api = context.influxdb.sut.write_api,
-                        bucket=bucket_name,
-                        org=org,
-                        measurement=measurement,
-                        batch_size=batch_size,
-                        compression=compression,
-                        precision_enum=precision_enum,
-                        point_complexity=point_complexity,
-                        tag_cardinality=tag_cardinality,
-                        time_ordering=time_ordering,
-                        base_ts=base_ts,
-                        stop_at=stop_at,
+        logger.debug(
+            "starting multi-bucket write benchmark with base_ts=%s (%s)",
+            base_ts,
+            precision_enum,
+        )
+
+        stop_at = time.perf_counter() + duration_s
+        all_metrics: List[BatchWriteMetrics] = []
+
+        started_at = time.perf_counter()
+        max_workers = max(1, bucket_count * parallel_writers)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for bucket_idx, bucket_name in enumerate(created_buckets):
+                for w in range(parallel_writers):
+                    writer_id = bucket_idx * parallel_writers + w
+                    futures.append(
+                        executor.submit(
+                            _run_duration_writer_worker,
+                            writer_id=writer_id,
+                            client=bench_client,
+                            bucket=bucket_name,
+                            org=org,
+                            measurement=measurement,
+                            batch_size=batch_size,
+                            precision_enum=precision_enum,
+                            point_complexity=point_complexity,
+                            tag_cardinality=tag_cardinality,
+                            time_ordering=time_ordering,
+                            base_ts=base_ts,
+                            stop_at=stop_at,
+                        )
                     )
-                )
 
-        for fut in as_completed(futures):
-            all_metrics.extend(fut.result())
+            for fut in as_completed(futures):
+                all_metrics.extend(fut.result())
 
-    total_duration_s = time.perf_counter() - started_at
-    total_points = sum(m.points for m in all_metrics)
+        total_duration_s = time.perf_counter() - started_at
+        total_points = sum(m.points for m in all_metrics)
 
-    context.multi_write_batches = all_metrics
-    context.multi_write_benchmark_meta = {
-        "measurement": measurement,
-        "bucket_prefix": bucket_prefix,
-        "bucket_count": bucket_count,
-        "batch_size": batch_size,
-        "parallel_writers_per_bucket": parallel_writers,
-        "compression": compression,
-        "precision": precision,
-        "point_complexity": point_complexity,
-        "tag_cardinality": tag_cardinality,
-        "time_ordering": time_ordering,
-        "bucket": f"{bucket_prefix}_*",
-        "org": org,
-        "sut_url": url,
-        "total_points": total_points,
-        "total_duration_s": total_duration_s,
-    }
+        context.multi_write_batches = all_metrics
+        context.multi_write_benchmark_meta = {
+            "measurement": measurement,
+            "bucket_prefix": bucket_prefix,
+            "bucket_count": bucket_count,
+            "batch_size": batch_size,
+            "parallel_writers_per_bucket": parallel_writers,
+            "compression": compression,
+            "precision": precision,
+            "point_complexity": point_complexity,
+            "tag_cardinality": tag_cardinality,
+            "time_ordering": time_ordering,
+            "bucket": f"{bucket_prefix}_*",
+            "org": org,
+            "sut_url": url,
+            "total_points": total_points,
+            "total_duration_s": total_duration_s,
+        }
 
-    latencies = [m.latency_s for m in all_metrics]
-    errors = [m for m in all_metrics if not m.ok]
+        latencies = [m.latency_s for m in all_metrics]
+        errors = [m for m in all_metrics if not m.ok]
 
-    throughput_points_per_s = (
-        total_points / total_duration_s if total_duration_s > 0 else None
-    )
-    error_rate = len(errors) / len(all_metrics) if all_metrics else 0.0
+        throughput_points_per_s = total_points / total_duration_s if total_duration_s > 0 else None
+        error_rate = (len(errors) / len(all_metrics)) if all_metrics else 0.0
 
-    context.multi_write_summary = {
-        "latencies_s": latencies,
-        "latency_stats": {
-            "min": min(latencies) if latencies else None,
-            "max": max(latencies) if latencies else None,
-            "avg": statistics.mean(latencies) if latencies else None,
-            "median": statistics.median(latencies) if latencies else None,
-        },
-        "throughput": {
-            "points_per_s": throughput_points_per_s,
-        },
-        "error_rate": error_rate,
-        "errors_count": len(errors),
-    }
+        context.multi_write_summary = {
+            "latencies_s": latencies,
+            "latency_stats": {
+                "min": min(latencies) if latencies else None,
+                "max": max(latencies) if latencies else None,
+                "avg": statistics.mean(latencies) if latencies else None,
+                "median": statistics.median(latencies) if latencies else None,
+            },
+            "throughput": {
+                "points_per_s": throughput_points_per_s,
+            },
+            "error_rate": error_rate,
+            "errors_count": len(errors),
+        }
+
+    finally:
+        bench_client.close()
 
 
 @then('I store the multi-bucket write benchmark result as "{outfile}"')
-def step_store_multi_bucket_write_result(context, outfile):
+def step_store_multi_bucket_write_result(context: Context, outfile: str):
     batches: List[BatchWriteMetrics] = getattr(context, "multi_write_batches", [])
     meta = getattr(context, "multi_write_benchmark_meta", {})
     summary = getattr(context, "multi_write_summary", {})
@@ -346,12 +344,11 @@ def step_store_multi_bucket_write_result(context, outfile):
         "created_at_epoch_s": time.time(),
     }
 
-    out_path = Path(outfile)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
-
-    logger.info("=== Multi-Bucket Write Benchmark Result ===")
-    logger.info(json.dumps(result, indent=2))
+    write_json_report(
+        outfile,
+        result,
+        logger_=logger,
+        log_prefix="Stored multi-bucket write benchmark result to ",
+    )
 
     _export_multi_write_result_to_main_influx(result, outfile, context)

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from behave import given, when, then
-from utils import _run_on_sut, _size_to_bytes
+from utils import _run_on_sut, _size_to_bytes, write_json_report
 
 def _profile_to_fio_args(profile: str) -> List[str]:
     """
@@ -201,6 +201,4 @@ def step_store_storage_result(context, report_path: str) -> None:
             "No storage benchmark found in context (did the When step run?)."
         )
 
-    path = Path(report_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_report(report_path,data)

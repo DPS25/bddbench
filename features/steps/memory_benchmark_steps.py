@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from behave import given, when, then
 
-from utils import _run_on_sut, _sut_host_identifier, _size_to_bytes
+from utils import _run_on_sut, _sut_host_identifier, _size_to_bytes, write_json_report
 
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"raw": output}
@@ -109,6 +109,4 @@ def step_store_memory_result(context, report_path):
     if not data:
         raise AssertionError("No memory benchmark found in context (did the When step run?)")
 
-    path = Path(report_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_report(report_path,data)
