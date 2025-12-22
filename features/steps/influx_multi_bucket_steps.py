@@ -131,7 +131,7 @@ def _export_multi_write_result_to_main_influx(result: Dict[str, Any], outfile: s
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    logging.info("[multi-write-bench] Exported multi-write result to main Influx")
+    logger.info("[multi-write-bench] Exported multi-write result to main Influx")
 
 
 def _run_duration_writer_worker(
@@ -196,7 +196,7 @@ def _run_duration_writer_worker(
                 status_code=500,
                 ok=False,
             )
-            logging.info(f"[multi-write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
+            logger.info(f"[multi-write-bench] writer={writer_id} batch={batch_index} failed: {exc}")
 
         metrics.append(m)
         batch_index += 1
@@ -242,9 +242,9 @@ def step_run_multi_bucket_write_benchmark(
         bucket_name = f"{bucket_prefix}_{i}"
         try:
             buckets_api.create_bucket(bucket_name=bucket_name, org=org)
-            logging.info(f"[multi-write-bench] Created bucket: {bucket_name}")
+            logger.info(f"[multi-write-bench] Created bucket: {bucket_name}")
         except Exception as exc:
-            logging.info(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
+            logger.info(f"[multi-write-bench] Bucket {bucket_name} may already exist: {exc}")
         created_buckets.append(bucket_name)
 
     if precision_enum == WritePrecision.NS:
@@ -351,7 +351,7 @@ def step_store_multi_bucket_write_result(context, outfile):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    logging.info("=== Multi-Bucket Write Benchmark Result ===")
-    logging.info(json.dumps(result, indent=2))
+    logger.info("=== Multi-Bucket Write Benchmark Result ===")
+    logger.info(json.dumps(result, indent=2))
 
     _export_multi_write_result_to_main_influx(result, outfile, context)

@@ -109,7 +109,7 @@ def _export_delete_result_to_main_influx(
         .field("points_before", int(metrics.points_before))
         .field("points_after", int(metrics.points_after))
         .field("deleted_points", int(metrics.points_before - metrics.points_after))
-        .field("expected_points", int(meta.get("expected_points", 0)))
+        .field("expected_points", int(meta.get("expected_points") or 0))
         .field("latency_s", float(metrics.latency_s))
         .field("status_code", int(metrics.status_code))
         .field("ok", bool(metrics.ok))
@@ -118,7 +118,7 @@ def _export_delete_result_to_main_influx(
     write_api.write(bucket=main_bucket, org=main_org, record=p)
     client.close()
 
-    logging.info("[delete-bench] Exported delete result to main Influx")
+    logger.info("[delete-bench] Exported delete result to main Influx")
 
 
 
@@ -165,7 +165,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     try:
         delete_api.delete(start=start, stop=stop, predicate=predicate, bucket=bucket, org=org)
     except Exception as exc:
-        logging.info(f"[delete-bench] delete for measurement={measurement} failed: {exc}")
+        logger.info(f"[delete-bench] delete for measurement={measurement} failed: {exc}")
         ok = False
         status_code = 500
     t1 = time.perf_counter()
@@ -199,7 +199,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         "expected_points": expected_points,
     }
 
-    logging.info(
+    logger.info(
         f"[delete-bench] measurement={measurement} "
         f"before={points_before}, after={points_after}, "
         f"latency={latency_s:.6f}s, ok={ok}"
@@ -217,7 +217,7 @@ def step_check_delete_latency(context: Context, max_ms: int) -> None:
         raise AssertionError("No delete metrics recorded on context.delete_metrics")
 
     latency_ms = metrics.latency_s * 1000.0
-    print(
+    logger.info(
         f"[delete-bench] measured delete latency: {latency_ms:.2f} ms "
         f"(max_ms from feature: {max_ms} ms – ignored for pass/fail)"
     )
@@ -261,7 +261,7 @@ def step_store_delete_result(context: Context, outfile: str) -> None:
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
-    logging.info("=== Generic Delete Benchmark Result ===")
-    logging.info(json.dumps(result, indent=2))
+    logger.info("=== Generic Delete Benchmark Result ===")
+    logger.info(json.dumps(result, indent=2))
 
-    _export_delete_result_to_main_influx(meta, metrics, outfile)
+    _export_delete_result_to_main_influx(context=context, meta=meta, metrics=metrics, outfile=outfile)
