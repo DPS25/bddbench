@@ -7,9 +7,8 @@ from typing import List, Dict, Any
 
 from behave import when, then
 from behave.runner import Context
-from influxdb_client import InfluxDBClient, WritePrecision
+from influxdb_client import InfluxDBClient, WritePrecision, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from influxdb_client.rest import ApiException
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils import (
@@ -18,9 +17,8 @@ from src.utils import (
     build_benchmark_point,
     write_json_report,
     scenario_id_from_outfile,
-    main_influx_is_configured,
-    get_main_influx_write_api,
-    build_multi_write_export_point,
+    generate_base_point,
+    export_point_to_main_influx,
 )
 
 logger = logging.getLogger("bddbench.steps.influx_multi_bucket_steps")
@@ -39,51 +37,52 @@ class BatchWriteMetrics:
 
 # ---------- Helpers ----------
 
+def _build_multi_write_export_point(
+    *,
+    context: Context,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    scenario_id: str,
+) -> Point:
+    """Builds the Point for exporting a multi-bucket write benchmark summary to MAIN Influx."""
+    latency_stats = summary.get("latency_stats", {}) or {}
+    throughput = summary.get("throughput", {}) or {}
+
+    p = generate_base_point(context=context, measurement="bddbench_multi_write_result", scenario_id=scenario_id)
+    # tags
+    p.tag("source_measurement", str(meta.get("measurement", "")))
+    p.tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
+    p.tag("compression", str(meta.get("compression", "")))
+    p.tag("precision", str(meta.get("precision", "")))
+    p.tag("point_complexity", str(meta.get("point_complexity", "")))
+    p.tag("time_ordering", str(meta.get("time_ordering", "")))
+    p.tag("sut_bucket_pattern", str(meta.get("bucket", "")))
+    # fields
+    p.field("bucket_count", int(meta.get("bucket_count", 0) or 0))
+    p.field("total_points", int(meta.get("total_points", 0) or 0))
+    p.field("total_duration_s", float(meta.get("total_duration_s", 0.0) or 0.0))
+    p.field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
+    p.field("error_rate", float(summary.get("error_rate", 0.0) or 0.0))
+    p.field("errors_count", int(summary.get("errors_count", 0) or 0))
+    p.field("latency_min_s", float(latency_stats.get("min") or 0.0))
+    p.field("latency_max_s", float(latency_stats.get("max") or 0.0))
+    p.field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
+    p.field("latency_median_s", float(latency_stats.get("median") or 0.0))
+    return p
+
+
 def _export_multi_write_result_to_main_influx(
     result: Dict[str, Any],
     outfile: str,
     context: Context,
 ) -> None:
-    """
-    Sends a compact summary of the multi-bucket write benchmark result to the
-    'main' InfluxDB.
-
-    Uses context.influxdb.main.* from environment.py.
-    Controlled by INFLUXDB_EXPORT_STRICT:
-      - "1"/"true"/"yes": export failures raise (fail scenario)
-      - otherwise: export failures only log a warning.
-    """
-    if not main_influx_is_configured(context):
-        logger.info("[multi-write-bench] MAIN influx not configured – skipping export")
-        return
-
-    main = context.influxdb.main
-    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
-
-    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
-    if write_api is None:
-        logger.info("[multi-write-bench] MAIN write_api missing – skipping export")
-        return
-
+    """Sends a compact summary of the multi-bucket write benchmark result to MAIN InfluxDB (if configured)."""
     meta = result.get("meta", {})
     summary = result.get("summary", {})
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("multi-write-",))
 
-    p = build_multi_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
-
-    try:
-        write_api.write(bucket=main.bucket, org=main.org, record=p)
-        logger.info("[multi-write-bench] Exported multi-write result to main Influx")
-    except ApiException as exc:
-        msg = f"[multi-write-bench] MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
-        if strict:
-            raise
-        logger.warning(msg)
-    except Exception as exc:
-        msg = f"[multi-write-bench] MAIN export failed: {exc}"
-        if strict:
-            raise
-        logger.warning(msg)
+    p = _build_multi_write_export_point(context=context, meta=meta, summary=summary, scenario_id=scenario_id)
+    export_point_to_main_influx(context=context, point=p, bench_label="multi_write", logger_=logger)
 
 
 def _create_bucket_compat(buckets_api: Any, bucket_name: str, org: str) -> None:
@@ -170,7 +169,7 @@ def _run_duration_writer_worker(
                 ok=False,
             )
             logger.info(
-                "[multi-write-bench] writer=%s batch=%s failed: %s",
+                "writer=%s batch=%s failed: %s",
                 writer_id,
                 batch_index,
                 exc,
@@ -228,7 +227,7 @@ def step_run_multi_bucket_write_benchmark(
             try:
                 org_id = _resolve_org_id(bench_client, org)
             except Exception as exc:
-                logger.info("[multi-write-bench] Could not resolve org_id (will try org=... path): %s", exc)
+                logger.info("Could not resolve org_id (will try org=... path): %s", exc)
 
         for i in range(bucket_count):
             bucket_name = f"{bucket_prefix}_{i}"
@@ -240,10 +239,10 @@ def step_run_multi_bucket_write_benchmark(
                     if not org_id:
                         raise
                     buckets_api.create_bucket(bucket_name=bucket_name, org_id=org_id)
-                logger.info("[multi-write-bench] Created bucket: %s", bucket_name)
+                logger.info("Created bucket: %s", bucket_name)
             except Exception as exc:
                 # If it already exists, the benchmark can still proceed
-                logger.info("[multi-write-bench] Bucket %s may already exist: %s", bucket_name, exc)
+                logger.info("Bucket %s may already exist: %s", bucket_name, exc)
             created_buckets.append(bucket_name)
 
         logger.debug(

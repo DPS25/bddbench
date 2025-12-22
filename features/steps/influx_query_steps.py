@@ -10,15 +10,13 @@ from behave.runner import Context
 from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from influxdb_client import InfluxDBClient
-from influxdb_client.rest import ApiException
+from influxdb_client import InfluxDBClient, Point
 
 from src.utils import (
     write_json_report,
     scenario_id_from_outfile,
-    main_influx_is_configured,
-    get_main_influx_write_api,
-    build_query_export_point,
+    generate_base_point,
+    export_point_to_main_influx,
 )
 
 logger = logging.getLogger("bddbench.influx_query_steps")
@@ -243,6 +241,77 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
     }
 
 
+
+
+def _build_query_export_point(
+    *,
+    context: Context,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    scenario_id: str,
+    runs: List["QueryRunMetrics"],
+) -> Point:
+    """Build the Point for exporting a generic query benchmark summary to MAIN Influx."""
+
+    ttf_stats = summary.get("time_to_first_result_s", {}) or {}
+    total_time_stats = summary.get("total_time_s", {}) or {}
+    bytes_stats = summary.get("bytes_returned", {}) or {}
+    rows_stats = summary.get("rows_returned", {}) or {}
+    throughput = summary.get("throughput", {}) or {}
+    error_rate = float(summary.get("error_rate", 0.0) or 0.0)
+
+    total_runs = len(runs)
+    errors_count = len([r for r in runs if not getattr(r, "ok", False)])
+
+    def _f(d: Dict[str, Any], key: str) -> float:
+        v = d.get(key)
+        return float(v) if v is not None else 0.0
+
+    p = generate_base_point(
+        context=context,
+        measurement="bddbench_query_result",
+        scenario_id=scenario_id,
+    )
+
+    # step-specific tags
+    p.tag("source_measurement", str(meta.get("measurement", "")))
+    p.tag("time_range", str(meta.get("time_range", "")))
+    p.tag("query_type", str(meta.get("query_type", "")))
+    p.tag("result_size", str(meta.get("result_size", "")))
+    p.tag("output_format", str(meta.get("output_format", "")))
+    p.tag("compression", str(meta.get("compression", "")))
+
+    # fields
+    p.field("total_runs", int(total_runs))
+    p.field("errors_count", int(errors_count))
+    p.field("error_rate", error_rate)
+
+    p.field("ttf_min_s", _f(ttf_stats, "min"))
+    p.field("ttf_max_s", _f(ttf_stats, "max"))
+    p.field("ttf_avg_s", _f(ttf_stats, "avg"))
+    p.field("ttf_median_s", _f(ttf_stats, "median"))
+
+    p.field("total_time_min_s", _f(total_time_stats, "min"))
+    p.field("total_time_max_s", _f(total_time_stats, "max"))
+    p.field("total_time_avg_s", _f(total_time_stats, "avg"))
+    p.field("total_time_median_s", _f(total_time_stats, "median"))
+
+    p.field("bytes_min", _f(bytes_stats, "min"))
+    p.field("bytes_max", _f(bytes_stats, "max"))
+    p.field("bytes_avg", _f(bytes_stats, "avg"))
+    p.field("bytes_median", _f(bytes_stats, "median"))
+
+    p.field("rows_min", _f(rows_stats, "min"))
+    p.field("rows_max", _f(rows_stats, "max"))
+    p.field("rows_avg", _f(rows_stats, "avg"))
+    p.field("rows_median", _f(rows_stats, "median"))
+
+    p.field("throughput_bytes_per_s", float(throughput.get("bytes_per_s") or 0.0))
+    p.field("throughput_rows_per_s", float(throughput.get("rows_per_s") or 0.0))
+
+    return p
+
+
 def _export_query_result_to_main_influx(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
@@ -250,51 +319,17 @@ def _export_query_result_to_main_influx(
     outfile: str,
     context: Context,
 ) -> None:
-    """
-    Exports a compact summary of the query benchmark to the 'main' InfluxDB.
+    """Sends a compact summary of the query benchmark result to MAIN InfluxDB (if configured)."""
 
-    Uses context.influxdb.main.* from environment.py.
-    Controlled by INFLUXDB_EXPORT_STRICT:
-      - "1"/"true"/"yes": export failures raise (fail scenario)
-      - otherwise: export failures only log a warning.
-    """
-    if not main_influx_is_configured(context):
-        logger.info("[query-bench] MAIN influx not configured – skipping export")
-        return
-
-    main = context.influxdb.main
-    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
-
-    client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
-    if write_api is None:
-        logger.info("[query-bench] MAIN write_api missing – skipping export")
-        return
-
-    total_runs = len(runs)
-    errors_count = len([r for r in runs if not r.ok])
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("query-",))
-
-    p = build_query_export_point(
+    p = _build_query_export_point(
+        context=context,
         meta=meta,
         summary=summary,
         scenario_id=scenario_id,
-        total_runs=total_runs,
-        errors_count=errors_count,
+        runs=runs,
     )
-
-    try:
-        write_api.write(bucket=main.bucket, org=main.org, record=p)
-        logger.info("Exported query result to main Influx")
-    except ApiException as exc:
-        msg = f"[query-bench] MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
-        if strict:
-            raise
-        logger.warning(msg)
-    except Exception as exc:
-        msg = f"[query-bench] MAIN export failed: {exc}"
-        if strict:
-            raise
-        logger.warning(msg)
+    export_point_to_main_influx(context=context, point=p, bench_label="query", logger_=logger)
 
 
 # ----------- Scenario Steps -------------

@@ -12,6 +12,7 @@ from typing import List, Optional, Sequence, Tuple, Any, Dict
 
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.rest import ApiException
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 
@@ -142,11 +143,11 @@ def build_benchmark_point(
 
 def scenario_id_from_outfile(outfile: str, prefixes: Sequence[str]) -> str:
     """
-    used in: 
-    influx_write, 
-    influx_query, 
-    influx_multi_bucket, 
-    influx_delete, 
+    used in:
+    influx_write,
+    influx_query,
+    influx_multi_bucket,
+    influx_delete,
     influx_user
 
     extracts a scenario_id from a report-filename
@@ -219,204 +220,69 @@ def get_main_influx_write_api(
 
     return client, write_api
 
-def build_write_export_point(
-    meta: Dict[str, Any],
-    summary: Dict[str, Any],
+
+def generate_base_point(
+    *,
+    context: Context,
+    measurement: str,
     scenario_id: str,
 ) -> Point:
+    """Create a base Point with common tags used across all benchmark result exports."""
+    p = Point(measurement).tag("scenario_id", scenario_id or "")
+
+    # SUT metadata (where the benchmark ran)
+    sut = getattr(getattr(context, "influxdb", None), "sut", None)
+    if sut is not None:
+        if getattr(sut, "bucket", None):
+            p.tag("sut_bucket", str(sut.bucket))
+        if getattr(sut, "org", None):
+            p.tag("sut_org", str(sut.org))
+        if getattr(sut, "url", None):
+            p.tag("sut_influx_url", str(sut.url))
+
+    return p
+
+
+def export_point_to_main_influx(
+    *,
+    context: Context,
+    point: Point,
+    bench_label: str,
+    logger_: logging.Logger,
+) -> None:
+    """Write a pre-built Point into MAIN Influx (if configured).
+
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning.
     """
-    used in:
-    influx_write
+    if not main_influx_is_configured(context):
+        logger_.info("MAIN influx not configured – skipping export")
+        return
 
-    builds the Point for exporting a generic write benchmark result to the main InfluxDB
-    """
-    latency_stats = summary.get("latency_stats", {}) or {}
-    throughput = summary.get("throughput", {}) or {}
+    main = context.influxdb.main
+    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
 
-    return (
-        Point("bddbench_write_result")
-        # tags
-        .tag("source_measurement", str(meta.get("measurement", "")))
-        .tag("compression", str(meta.get("compression", "")))
-        .tag("precision", str(meta.get("precision", "")))
-        .tag("point_complexity", str(meta.get("point_complexity", "")))
-        .tag("time_ordering", str(meta.get("time_ordering", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
-        .tag("scenario_id", scenario_id or "")
-        # fields
-        .field("total_points", int(meta.get("total_points", 0)))
-        .field("total_batches", int(meta.get("total_batches", 0)))
-        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
-        .field(
-            "throughput_points_per_s",
-            float(throughput.get("points_per_s") or 0.0),
-        )
-        .field("error_rate", float(summary.get("error_rate", 0.0)))
-        .field("errors_count", int(summary.get("errors_count", 0)))
-        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
-        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
-        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
-        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
-    )
+    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        logger_.info("MAIN write_api missing – skipping export")
+        return
 
-def build_multi_write_export_point(
-    meta: Dict[str, Any],
-    summary: Dict[str, Any],
-    scenario_id: str,
-) -> Point:
-    """
-    used in:
-      influx_multi_bucket
+    try:
+        write_api.write(bucket=main.bucket, org=main.org, record=point)
+        logger_.info("Exported %s result to MAIN Influx", bench_label)
+    except ApiException as exc:
+        msg = f"MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger_.warning(msg)
+    except Exception as exc:
+        msg = f"MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger_.warning(msg)
 
-    builds the Point for exporting a multi-bucket write benchmark summary to the main InfluxDB.
-    """
-    latency_stats = summary.get("latency_stats", {}) or {}
-    throughput = summary.get("throughput", {}) or {}
 
-    return (
-        Point("bddbench_multi_write_result")
-        # tags
-        .tag("source_measurement", str(meta.get("measurement", "")))
-        .tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
-        .tag("compression", str(meta.get("compression", "")))
-        .tag("precision", str(meta.get("precision", "")))
-        .tag("point_complexity", str(meta.get("point_complexity", "")))
-        .tag("time_ordering", str(meta.get("time_ordering", "")))
-        .tag("sut_bucket_pattern", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
-        .tag("scenario_id", scenario_id or "")
-        # fields
-        .field("bucket_count", int(meta.get("bucket_count", 0)))
-        .field("total_points", int(meta.get("total_points", 0)))
-        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
-        .field(
-            "throughput_points_per_s",
-            float(throughput.get("points_per_s") or 0.0),
-        )
-        .field("error_rate", float(summary.get("error_rate", 0.0)))
-        .field("errors_count", int(summary.get("errors_count", 0)))
-        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
-        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
-        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
-        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
-    )
-
-def build_query_export_point(
-    meta: Dict[str, Any],
-    summary: Dict[str, Any],
-    scenario_id: str,
-    total_runs: int,
-    errors_count: int,
-) -> Point:
-    """
-    used in:
-      influx_query
-
-    builds the Point for exporting a generic query benchmark summary
-    to the main InfluxDB.
-    """
-    ttf_stats = summary.get("time_to_first_result_s", {}) or {}
-    total_time_stats = summary.get("total_time_s", {}) or {}
-    bytes_stats = summary.get("bytes_returned", {}) or {}
-    rows_stats = summary.get("rows_returned", {}) or {}
-    throughput = summary.get("throughput", {}) or {}
-    error_rate = float(summary.get("error_rate", 0.0))
-
-    def _f(d: Dict[str, Any], key: str) -> float:
-        v = d.get(key)
-        return float(v) if v is not None else 0.0
-
-    throughput_bytes_per_s = float(throughput.get("bytes_per_s") or 0.0)
-    throughput_rows_per_s = float(throughput.get("rows_per_s") or 0.0)
-
-    return (
-        Point("bddbench_query_result")
-        # tags
-        .tag("source_measurement", str(meta.get("measurement", "")))
-        .tag("time_range", str(meta.get("time_range", "")))
-        .tag("query_type", str(meta.get("query_type", "")))
-        .tag("result_size", str(meta.get("result_size", "")))
-        .tag("output_format", str(meta.get("output_format", "")))
-        .tag("compression", str(meta.get("compression", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
-        .tag("scenario_id", scenario_id or "")
-        # fields
-        .field("total_runs", int(total_runs))
-        .field("errors_count", int(errors_count))
-        .field("error_rate", error_rate)
-        .field("ttf_min_s", _f(ttf_stats, "min"))
-        .field("ttf_max_s", _f(ttf_stats, "max"))
-        .field("ttf_avg_s", _f(ttf_stats, "avg"))
-        .field("ttf_median_s", _f(ttf_stats, "median"))
-        .field("total_time_min_s", _f(total_time_stats, "min"))
-        .field("total_time_max_s", _f(total_time_stats, "max"))
-        .field("total_time_avg_s", _f(total_time_stats, "avg"))
-        .field("total_time_median_s", _f(total_time_stats, "median"))
-        .field("bytes_min", _f(bytes_stats, "min"))
-        .field("bytes_max", _f(bytes_stats, "max"))
-        .field("bytes_avg", _f(bytes_stats, "avg"))
-        .field("bytes_median", _f(bytes_stats, "median"))
-        .field("rows_min", _f(rows_stats, "min"))
-        .field("rows_max", _f(rows_stats, "max"))
-        .field("rows_avg", _f(rows_stats, "avg"))
-        .field("rows_median", _f(rows_stats, "median"))
-        .field("throughput_bytes_per_s", throughput_bytes_per_s)
-        .field("throughput_rows_per_s", throughput_rows_per_s)
-    )
-
-def build_delete_export_point(
-    meta: Dict[str, Any],
-    summary: Dict[str, Any],
-    metrics: Any,
-    scenario_id: str,
-) -> Point:
-    """
-    used in:
-      influx_delete
-
-    builds the Point("bddbench_delete_result") for exporting a generic
-    delete benchmark summary to the main InfluxDB.
-    """
-    points_before = int(
-        getattr(metrics, "points_before", summary.get("points_before", 0)) or 0
-    )
-    points_after = int(
-        getattr(metrics, "points_after", summary.get("points_after", 0)) or 0
-    )
-    deleted_points = points_before - points_after
-    expected_points = int(
-        meta.get("expected_points", summary.get("expected_points", 0)) or 0
-    )
-    latency_s = float(
-        getattr(metrics, "latency_s", summary.get("latency_s", 0.0)) or 0.0
-    )
-    status_code = int(
-        getattr(metrics, "status_code", summary.get("status_code", 0)) or 0
-    )
-    ok = bool(getattr(metrics, "ok", points_after == 0))
-
-    return (
-        Point("bddbench_delete_result")
-        # tags
-        .tag("measurement", str(meta.get("measurement", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
-        .tag("scenario_id", scenario_id or "")
-        # fields
-        .field("points_before", points_before)
-        .field("points_after", points_after)
-        .field("deleted_points", deleted_points)
-        .field("expected_points", expected_points)
-        .field("latency_s", latency_s)
-        .field("status_code", status_code)
-        .field("ok", ok)
-    )
 
 def write_json_report(
     outfile: str,

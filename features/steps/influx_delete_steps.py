@@ -6,14 +6,13 @@ from typing import Dict, Any
 
 from behave import when, then
 from behave.runner import Context
-from influxdb_client.rest import ApiException
+from influxdb_client import Point
 
 from src.utils import (
     write_json_report,
     scenario_id_from_outfile,
-    main_influx_is_configured,
-    get_main_influx_write_api,
-    build_delete_export_point,
+    generate_base_point,
+    export_point_to_main_influx,
 )
 
 logger = logging.getLogger("bddbench.influx_delete_steps")
@@ -67,6 +66,45 @@ from(bucket: "{bucket}")
     return total
 
 
+def _build_delete_export_point(
+    *,
+    context: Context,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    metrics: DeleteRunMetrics,
+    scenario_id: str,
+) -> Point:
+    """Build the Point for exporting a generic delete benchmark summary to MAIN Influx."""
+
+    points_before = int(getattr(metrics, "points_before", summary.get("points_before", 0)) or 0)
+    points_after = int(getattr(metrics, "points_after", summary.get("points_after", 0)) or 0)
+    deleted_points = points_before - points_after
+    expected_points = int(meta.get("expected_points", summary.get("expected_points", 0)) or 0)
+    latency_s = float(getattr(metrics, "latency_s", summary.get("latency_s", 0.0)) or 0.0)
+    status_code = int(getattr(metrics, "status_code", summary.get("status_code", 0)) or 0)
+    ok = bool(getattr(metrics, "ok", points_after == 0))
+
+    p = generate_base_point(
+        context=context,
+        measurement="bddbench_delete_result",
+        scenario_id=scenario_id,
+    )
+
+    # step-specific tags
+    p.tag("measurement", str(meta.get("measurement", "")))
+
+    # fields
+    p.field("points_before", points_before)
+    p.field("points_after", points_after)
+    p.field("deleted_points", deleted_points)
+    p.field("expected_points", expected_points)
+    p.field("latency_s", latency_s)
+    p.field("status_code", status_code)
+    p.field("ok", ok)
+
+    return p
+
+
 def _export_delete_result_to_main_influx(
     context: Context,
     meta: Dict[str, Any],
@@ -74,48 +112,17 @@ def _export_delete_result_to_main_influx(
     metrics: DeleteRunMetrics,
     outfile: str,
 ) -> None:
-    """
-    Sends a compact summary of the delete benchmark result to the 'main' InfluxDB.
-
-    Uses context.influxdb.main.* from environment.py.
-    Controlled by INFLUXDB_EXPORT_STRICT:
-      - "1"/"true"/"yes": export failures raise (fail scenario)
-      - otherwise: export failures only log a warning.
-    """
-    if not main_influx_is_configured(context):
-        logger.info("[delete-bench] MAIN influx not configured – skipping export")
-        return
-
-    main = context.influxdb.main
-    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
-
-    client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
-    if write_api is None:
-        logger.info("[delete-bench] MAIN write_api missing – skipping export")
-        return
+    """Sends a compact summary of the delete benchmark result to MAIN InfluxDB (if configured)."""
 
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("delete-",))
-
-    p = build_delete_export_point(
+    p = _build_delete_export_point(
+        context=context,
         meta=meta,
         summary=summary,
         metrics=metrics,
         scenario_id=scenario_id,
     )
-
-    try:
-        write_api.write(bucket=main.bucket, org=main.org, record=p)
-        logger.info("[delete-bench] Exported delete result to main Influx")
-    except ApiException as exc:
-        msg = f"[delete-bench] MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
-        if strict:
-            raise
-        logger.warning(msg)
-    except Exception as exc:
-        msg = f"[delete-bench] MAIN export failed: {exc}"
-        if strict:
-            raise
-        logger.warning(msg)
+    export_point_to_main_influx(context=context, point=p, bench_label="delete", logger_=logger)
 
 
 # ---------- Scenario Steps ----------
@@ -157,7 +164,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     try:
         delete_api.delete(start=start, stop=stop, predicate=predicate, bucket=bucket, org=org)
     except Exception as exc:
-        logger.info(f"[delete-bench] delete for measurement={measurement} failed: {exc}")
+        logger.info(f"delete for measurement={measurement} failed: {exc}")
         ok = False
         status_code = 500
     t1 = time.perf_counter()
@@ -190,7 +197,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     }
 
     logger.info(
-        f"[delete-bench] measurement={measurement} "
+        f"measurement={measurement} "
         f"before={points_before}, after={points_after}, "
         f"latency={latency_s:.6f}s, ok={ok}"
     )
@@ -198,19 +205,25 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
 
 @then("the delete duration shall be <= {max_ms:d} ms")
 def step_check_delete_latency(context: Context, max_ms: int) -> None:
+    """
+    Logs the measured delete latency (in ms) for the last delete run.
+
+    Note: The current implementation does not fail the scenario based on `max_ms`.
+    """
     metrics: DeleteRunMetrics = getattr(context, "delete_metrics", None)
     if metrics is None:
         raise AssertionError("No delete metrics recorded on context.delete_metrics")
 
     latency_ms = metrics.latency_s * 1000.0
     logger.info(
-        f"[delete-bench] measured delete latency: {latency_ms:.2f} ms "
+        f"measured delete latency: {latency_ms:.2f} ms "
         f"(max_ms from feature: {max_ms} ms – ignored for pass/fail)"
     )
 
 
 @then('no points for measurement "{measurement}" shall remain in the SUT bucket')
 def step_ensure_no_points_remain(context: Context, measurement: str) -> None:
+    """Asserts that no points for the given measurement remain in the SUT bucket."""
     points_after = _count_points_for_measurement(context, measurement)
     if points_after != 0:
         raise AssertionError(
