@@ -2,33 +2,16 @@ import json
 import os
 import platform
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from behave import given, when, then
-from utils import _run, _run_on_sut, _get_sut_ssh_target
-
-
-# helpers
-
-_SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMG]?)\s*$", re.IGNORECASE)
-
-
-def _size_to_bytes(value: str) -> int:
-    """
-    Convert a size string like '4G', '1M', '4K' to a byte count.
-    Used only for metadata in the report.
-    """
-    m = _SIZE_RE.match(value)
-    if not m:
-        raise AssertionError(f"Invalid size format: {value!r} (expected e.g. 1K/1M/1G)")
-    num = float(m.group(1))
-    suffix = (m.group(2) or "").upper()
-    mult = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}[suffix]
-    return int(num * mult)
-
+from src.utils import (
+    _run_on_sut, 
+    _size_to_bytes, 
+    write_json_report,
+)
 
 def _profile_to_fio_args(profile: str) -> List[str]:
     """
@@ -222,6 +205,4 @@ def step_store_storage_result(context, report_path: str) -> None:
             "No storage benchmark found in context (did the When step run?)."
         )
 
-    path = Path(report_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_report(report_path,data)

@@ -3,7 +3,7 @@ import logging
 
 from behave.runner import Context
 
-logger = logging.getLogger(f"bddbench.influx_query_steps")
+logger = logging.getLogger(f"bddbench.influx_global_endpoint_steps")
 
 @given("a SUT InfluxDB v2 endpoint is configured and reachable")
 def step_bucket_from_env(context: Context):

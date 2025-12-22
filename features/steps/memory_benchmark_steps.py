@@ -1,51 +1,18 @@
 import json
 import os
-import platform
 import re
-import subprocess
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from behave import given, when, then
-from influxdb_client import Point, WritePrecision
 
-
-_SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMG]?)\s*$", re.IGNORECASE)
-
-def _size_to_bytes(value: str) -> int:
-    m = _SIZE_RE.match(value)
-    if not m:
-        raise AssertionError(f"Invalid size format: {value!r} (expected e.g. 1K/1M/1G)")
-    num = float(m.group(1))
-    suffix = (m.group(2) or "").upper()
-    mult = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}[suffix]
-    return int(num * mult)
-
-def _run(cmd: list[str]) -> str:
-    p = subprocess.run(cmd, text=True, capture_output=True)
-    out = (p.stdout or "") + ("\n" + p.stderr if p.stderr else "")
-    if p.returncode != 0:
-        raise AssertionError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{out}")
-    return out
-
-def _sut_target() -> Optional[str]:
-    return os.getenv("SUT_SSH")
-
-def _run_on_sut(cmd: list[str]) -> str:
-    target = _sut_target()
-    if target:
-        ssh_cmd = ["ssh", target, "--", *cmd]
-        return _run(ssh_cmd) 
-    else:
-        return _run(cmd)
-
-def _sut_host_identifier() -> str:
-    target = _sut_target()
-    if target: 
-        return target
-    return platform.node()
+from src.utils import (
+    _run_on_sut, 
+    _sut_host_identifier, 
+    _size_to_bytes, 
+    write_json_report,
+)
 
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"raw": output}
@@ -119,7 +86,8 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
         "run",
     ]
 
-    output = _run_on_sut(cmd)
+    completed = _run_on_sut(cmd)
+    output = (completed.stdout or "") + (("\n" + completed.stderr) if completed.stderr else "")
     parsed = _parse_sysbench_memory(output)
 
     context.memory_benchmark = {
@@ -146,6 +114,4 @@ def step_store_memory_result(context, report_path):
     if not data:
         raise AssertionError("No memory benchmark found in context (did the When step run?)")
 
-    path = Path(report_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_report(report_path,data)

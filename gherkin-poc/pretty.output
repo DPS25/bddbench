@@ -1,0 +1,186 @@
+Feature: Basic InfluxDB write and read-back benchmark # features/influx_basic_benchmark.feature:1
+
+  Background:   # features/influx_basic_benchmark.feature:2
+
+  @poc @influx @basic
+  Scenario: write and read back a small batch                    # features/influx_basic_benchmark.feature:7
+    Given an InfluxDB v2 endpoint is configured from environment # features/steps/influx_basic_steps.py:11
+    And a target bucket from environment is available            # features/steps/influx_basic_steps.py:30
+    When I write 10 points with measurement "bddbench_write"     # features/steps/influx_basic_steps.py:38
+      Traceback (most recent call last):
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connection.py", line 198, in _new_conn
+          sock = connection.create_connection(
+              (self._dns_host, self.port),
+          ...<2 lines>...
+              socket_options=self.socket_options,
+          )
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/util/connection.py", line 85, in create_connection
+          raise err
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/util/connection.py", line 73, in create_connection
+          sock.connect(sa)
+          ~~~~~~~~~~~~^^^^
+      ConnectionRefusedError: [Errno 111] Connection refused
+      
+      The above exception was the direct cause of the following exception:
+      
+      Traceback (most recent call last):
+        File "/nix/store/hfdzwakzmh35d155kka18bji44mfifhy-python3.13-behave-1.2.7.dev5/lib/python3.13/site-packages/behave/model.py", line 1812, in run
+          match.run(runner.context)
+          ~~~~~~~~~^^^^^^^^^^^^^^^^
+        File "/nix/store/hfdzwakzmh35d155kka18bji44mfifhy-python3.13-behave-1.2.7.dev5/lib/python3.13/site-packages/behave/matchers.py", line 103, in run
+          self.func(context, *args, **kwargs)
+          ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "features/steps/influx_basic_steps.py", line 55, in step_write_points
+          context.write_api.write(
+          ~~~~~~~~~~~~~~~~~~~~~~~^
+              bucket=context.influx_bucket,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              org=context.influx_org,
+              ^^^^^^^^^^^^^^^^^^^^^^^
+              record=point,
+              ^^^^^^^^^^^^^
+          )
+          ^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/client/write_api.py", line 381, in write
+          results = list(map(write_payload, payloads.items()))
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/client/write_api.py", line 379, in write_payload
+          return self._post_write(_async_req, bucket, org, final_string, payload[0])
+                 ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/client/write_api.py", line 516, in _post_write
+          return self._write_service.post_write(org=org, bucket=bucket, body=body, precision=precision,
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                async_req=_async_req,
+                                                ^^^^^^^^^^^^^^^^^^^^^
+                                                content_type="text/plain; charset=utf-8",
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                **kwargs)
+                                                ^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/service/write_service.py", line 60, in post_write
+          (data) = self.post_write_with_http_info(org, bucket, body, **kwargs)  # noqa: E501
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/service/write_service.py", line 90, in post_write_with_http_info
+          return self.api_client.call_api(
+                 ~~~~~~~~~~~~~~~~~~~~~~~~^
+              '/api/v2/write', 'POST',
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+          ...<12 lines>...
+              collection_formats={},
+              ^^^^^^^^^^^^^^^^^^^^^^
+              urlopen_kw=kwargs.get('urlopen_kw', None))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/_sync/api_client.py", line 343, in call_api
+          return self.__call_api(resource_path, method,
+                 ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+                                 path_params, query_params, header_params,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          ...<2 lines>...
+                                 _return_http_data_only, collection_formats,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                 _preload_content, _request_timeout, urlopen_kw)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/_sync/api_client.py", line 173, in __call_api
+          response_data = self.request(
+              method, url, query_params=query_params, headers=header_params,
+              post_params=post_params, body=body,
+              _preload_content=_preload_content,
+              _request_timeout=_request_timeout, **urlopen_kw)
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/_sync/api_client.py", line 388, in request
+          return self.rest_client.POST(url,
+                 ~~~~~~~~~~~~~~~~~~~~~^^^^^
+                                       query_params=query_params,
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+          ...<4 lines>...
+                                       body=body,
+                                       ^^^^^^^^^^
+                                       **urlopen_kw)
+                                       ^^^^^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/_sync/rest.py", line 311, in POST
+          return self.request("POST", url,
+                 ~~~~~~~~~~~~^^^^^^^^^^^^^
+                              headers=headers,
+                              ^^^^^^^^^^^^^^^^
+          ...<4 lines>...
+                              body=body,
+                              ^^^^^^^^^^
+                              **urlopen_kw)
+                              ^^^^^^^^^^^^^
+        File "/nix/store/zsrb7ns49vc8rdpdb2skvn62i4yp8w05-python3.13-influxdb-client-1.49.0/lib/python3.13/site-packages/influxdb_client/_sync/rest.py", line 220, in request
+          r = self.pool_manager.request(
+              method, url,
+          ...<3 lines>...
+              headers=headers,
+              **urlopen_kw)
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/_request_methods.py", line 143, in request
+          return self.request_encode_body(
+                 ~~~~~~~~~~~~~~~~~~~~~~~~^
+              method, url, fields=fields, headers=headers, **urlopen_kw
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          )
+          ^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/_request_methods.py", line 278, in request_encode_body
+          return self.urlopen(method, url, **extra_kw)
+                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/poolmanager.py", line 459, in urlopen
+          response = conn.urlopen(method, u.request_uri, **kw)
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+          retries = retries.increment(
+              method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+          )
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/util/retry.py", line 449, in increment
+          raise reraise(type(error), error, _stacktrace)
+                ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/util/util.py", line 39, in reraise
+          raise value
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+          response = self._make_request(
+              conn,
+          ...<10 lines>...
+              **response_kw,
+          )
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connectionpool.py", line 493, in _make_request
+          conn.request(
+          ~~~~~~~~~~~~^
+              method,
+              ^^^^^^^
+          ...<6 lines>...
+              enforce_content_length=enforce_content_length,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          )
+          ^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connection.py", line 494, in request
+          self.endheaders()
+          ~~~~~~~~~~~~~~~^^
+        File "/nix/store/cfapjd2rvqrpry4grb0kljnp8bvnvfxz-python3-3.13.8/lib/python3.13/http/client.py", line 1333, in endheaders
+          self._send_output(message_body, encode_chunked=encode_chunked)
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/nix/store/cfapjd2rvqrpry4grb0kljnp8bvnvfxz-python3-3.13.8/lib/python3.13/http/client.py", line 1093, in _send_output
+          self.send(msg)
+          ~~~~~~~~~^^^^^
+        File "/nix/store/cfapjd2rvqrpry4grb0kljnp8bvnvfxz-python3-3.13.8/lib/python3.13/http/client.py", line 1037, in send
+          self.connect()
+          ~~~~~~~~~~~~^^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connection.py", line 325, in connect
+          self.sock = self._new_conn()
+                      ~~~~~~~~~~~~~~^^
+        File "/nix/store/k19c87r41ms9w1b17rcrfg5ssa82kzzv-python3.13-urllib3-2.5.0/lib/python3.13/site-packages/urllib3/connection.py", line 213, in _new_conn
+          raise NewConnectionError(
+              self, f"Failed to establish a new connection: {e}"
+          ) from e
+      urllib3.exceptions.NewConnectionError: <urllib3.connection.HTTPConnection object at 0x71f94f96ea50>: Failed to establish a new connection: [Errno 111] Connection refused
+
+    Then I can read back 10 points with the same run id          # None
+    And the average write latency shall be <= 500 ms             # None
+
+Feature: InfluxDB v2 write path performance (POC) # features/write_latency.feature:1
+  In order to express performance benchmarks in BDD
+  As the team
+  I want to define a write workload and check basic latency rules
+  Background:   # features/write_latency.feature:6
+
+  @poc @m1 @write
+  Scenario Outline: Write load with basic thresholds -- @1.1                        # features/write_latency.feature:18
+    Given an InfluxDB endpoint is configured                                        # None
+    And a bucket "bdbench" is defined                                               # None
+    When I write 200 points per second for 5 seconds                                # None
+    Then the median latency shall be <= 50 ms                                       # None
+    And I store the benchmark result as "gherkin-poc/reports/write-latency-p1.json" # None
+
