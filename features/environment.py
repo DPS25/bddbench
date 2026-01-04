@@ -8,7 +8,7 @@ from behave.model import Feature, Scenario, Step
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
-
+from src.utils import _run_on_sut
 from src.formatter.AnsiColorFormatter import AnsiColorFormatter
 
 logger = logging.getLogger("bddbench.environment")
@@ -214,6 +214,45 @@ def _ensure_influx_initialized(context: Context):
     if getattr(getattr(context.influxdb, "sut", None), "client", None) is None:
         _load_env(context)
         return
+
+def run_stress_logic(context: Context, action: str, step: Step | None) -> None:
+    """
+    Start/stop stress-ng systemd presets on the SUT.
+    Uses SUT_SSH via src.utils._run_on_sut().
+    """
+    
+    if step is not None and step.keyword != "When":
+        return
+
+    raw = getattr(context, "_stress_presets", "cpu4")
+    presets = (
+        [p.strip() for p in raw.split(",") if p.strip()]
+        if isinstance(raw, str)
+        else list(raw)
+    )
+
+    if action == "start":
+        if getattr(context, "_stress_active", False):
+            return
+    elif action == "stop":
+        if not getattr(context, "_stress_active", False):
+            return
+    else:
+        raise AssertionError(f"Invalid stress action: {action!r}")
+
+    for preset in presets:
+        unit = f"stress@{preset}.service"
+        try:
+            _run_on_sut(["sudo", "systemctl", action, unit])
+        except Exception as exc:
+            # start must fail the run; stop should not block cleanup
+            if action == "stop":
+                logger.warning("Failed to stop %s: %s", unit, exc)
+            else:
+                raise AssertionError(f"Failed to start {unit}: {exc}") from exc
+
+    context._stress_active = (action == "start")
+
 
 def before_all(context: Context):
     """
