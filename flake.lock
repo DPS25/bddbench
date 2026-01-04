@@ -1,12 +1,33 @@
 {
   "nodes": {
+    "nix-ld": {
+      "inputs": {
+        "nixpkgs": [
+          "secrets",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1765181983,
+        "narHash": "sha256-lRU5q1TXf0S5Q6VJilH4CLpHhfmzSagSEGX/Q/ZAhpY=",
+        "owner": "Mic92",
+        "repo": "nix-ld",
+        "rev": "9505c64def3ab356fc89c32f05b5d23493b42b2f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "nix-ld",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1762844143,
-        "narHash": "sha256-SlybxLZ1/e4T2lb1czEtWVzDCVSTvk9WLwGhmxFmBxI=",
+        "lastModified": 1764517877,
+        "narHash": "sha256-pp3uT4hHijIC8JUK5MEqeAWmParJrgBVzHLNfJDZxg4=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "9da7f1cf7f8a6e2a7cb3001b048546c92a8258b4",
+        "rev": "2d293cbfa5a793b4c50d17c05ef9e385b90edf6c",
         "type": "github"
       },
       "original": {
@@ -40,15 +61,16 @@
     },
     "secrets": {
       "inputs": {
+        "nix-ld": "nix-ld",
         "nixpkgs": "nixpkgs_2",
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1762706023,
-        "narHash": "sha256-/rPUahGruxrZOB0DB+aPdULmp/bTeoaZaVobytMhaRs=",
+        "lastModified": 1765794244,
+        "narHash": "sha256-VoHPPcrdvbCqxwj//zaPYJFpV00WCFA5L8nVvchTLmg=",
         "ref": "refs/heads/main",
-        "rev": "649ed8d4a738fe52d626846aa49d9025947be7e1",
-        "revCount": 22,
+        "rev": "435b9e452136f178970f32c00c588268e8208d84",
+        "revCount": 36,
         "type": "git",
         "url": "ssh://git@github.com/DPS25/nix.git"
       },

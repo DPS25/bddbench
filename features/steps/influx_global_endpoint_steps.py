@@ -8,7 +8,7 @@ logger = logging.getLogger(f"bddbench.influx_query_steps")
 @given("a SUT InfluxDB v2 endpoint is configured and reachable")
 def step_bucket_from_env(context: Context):
     if not context.influxdb.sut.client.ping():
-        logging.getLogger("bdd_journal").error("SUT InfluxDB endpoint is not reachable")
+        logger.error("SUT InfluxDB endpoint is not reachable")
         raise RuntimeError("SUT InfluxDB endpoint is not reachable")
 
 

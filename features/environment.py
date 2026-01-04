@@ -75,20 +75,6 @@ def _load_env(context: Context):
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
     context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
     context.influxdb.sut = getattr(context.influxdb, "sut", SimpleNamespace())
-    context.influxdb.main.url = None
-    context.influxdb.main.token = None
-    context.influxdb.main.org = None
-    context.influxdb.main.bucket = None
-    context.influxdb.main.client = None
-    context.influxdb.main.write_api = None
-    context.influxdb.main.query_api = None
-    context.influxdb.sut.url = None
-    context.influxdb.sut.token = None
-    context.influxdb.sut.org = None
-    context.influxdb.sut.bucket = None
-    context.influxdb.sut.client = None
-    context.influxdb.sut.write_api = None
-    context.influxdb.sut.query_api = None
 
     # ----- main influx DB -----
     require_main = _env_truthy("INFLUXDB_REQUIRE_MAIN", "0")
@@ -240,6 +226,7 @@ def before_all(context: Context):
     logger.info("------------------------------------------------")
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
+    _ensure_influx_initialized(context)
 
 
 def before_feature(context: Context, feature: Feature):
