@@ -227,6 +227,9 @@ def before_all(context: Context):
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
     _ensure_influx_initialized(context)
+    context.stress = context.config.userdata.get("stress") == "true"
+    context._stress_active = False
+    context._stress_presets = (context.config.userdata.get("stress_presets") or "cpu4")
 
 
 def before_feature(context: Context, feature: Feature):
@@ -253,10 +256,12 @@ def after_feature(context: Context, feature: Feature):
     )
 
 def before_step(context: Context, step: Step):
-    pass
+    if context.stress:
+        run_stress_logic(context, "start", step)
 
 def after_step(context: Context, step: Step):
-    pass
+    if context.stress:
+        run_stress_logic(context, "stop", step)
 
 
 def before_scenario(context: Context, scenario: Scenario):
