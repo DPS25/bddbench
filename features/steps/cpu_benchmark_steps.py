@@ -1,23 +1,17 @@
 import json
 import os
-import platform
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
 from behave import given, when, then
-
-
-def _run(cmd: list[str]) -> str:
-    """Run a shell command and return stdout+stderr, or raise on non-zero exit."""
-    p = subprocess.run(cmd, text=True, capture_output=True)
-    out = (p.stdout or "") + ("\n" + p.stderr if p.stderr else "")
-    if p.returncode != 0:
-        raise AssertionError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{out}")
-    return out
-
+from src.utils import (
+    _run_on_sut, 
+    _sut_host_identifier, 
+    _size_to_bytes, 
+    write_json_report,
+)
 
 def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
     """
@@ -90,13 +84,15 @@ def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
 
     return result
 
+
 @given("sysbench is installed")
 def step_sysbench_installed(context):
     try:
-        _run(["sysbench", "--version"])
+        _run_on_sut(["sysbench", "--version"])
     except Exception as e:
-        raise AssertionError("sysbench not found. Add pkgs.sysbench to flake.nix") from e
-
+        raise AssertionError(
+            "sysbench not found on SUT. Install sysbench there or add pkgs.sysbench to flake.nix"
+        ) from e
 
 
 @when(
@@ -113,12 +109,13 @@ def step_run_sysbench_cpu(context, max_prime: int, threads: int, time_limit_s: i
         "run",
     ]
 
-    output = _run(cmd)
+    proc = _run_on_sut(cmd)
+    output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     parsed = _parse_sysbench_cpu(output)
 
     context.cpu_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": platform.node(),
+        "host": _sut_host_identifier(),
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "max_prime": max_prime,
@@ -138,3 +135,4 @@ def step_store_cpu_result(context, report_path: str):
     path = Path(report_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
