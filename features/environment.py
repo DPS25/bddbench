@@ -24,6 +24,15 @@ def _env_strip(name: str, default: str | None = None) -> str | None:
     v = str(v).strip()
     return v if v != "" else None
 
+def _should_stress_step(step) -> bool:
+    if step is None:
+        return False
+    if step.keyword.strip().lower() != "when":
+        return False
+
+    name = (step.name or "").lower()
+    return ("benchmark" in name) and ("i run" in name)
+
 def _load_dotenv_files():
     """
     Load dotenv files (repo defaults + generated/secret env) into process env.
@@ -295,11 +304,11 @@ def after_feature(context: Context, feature: Feature):
     )
 
 def before_step(context: Context, step: Step):
-    if context.stress:
+    if context.stress and _should_stress_step(step):
         run_stress_logic(context, "start", step)
 
 def after_step(context: Context, step: Step):
-    if context.stress:
+    if context.stress and _should_stress_step(step):
         run_stress_logic(context, "stop", step)
 
 
