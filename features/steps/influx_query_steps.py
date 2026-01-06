@@ -3,7 +3,7 @@ import time
 import json
 import statistics
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 
 from behave.runner import Context
@@ -11,12 +11,14 @@ from behave import when, then
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from influxdb_client import InfluxDBClient, Point
+from influxdb_client.rest import ApiException
 
 from src.utils import (
     write_json_report,
     scenario_id_from_outfile,
-    generate_base_point,
-    export_point_to_main_influx,
+    main_influx_is_configured,
+    get_main_influx_write_api,
+    write_to_influx,
 )
 
 logger = logging.getLogger("bddbench.influx_query_steps")
@@ -38,7 +40,7 @@ class QueryRunMetrics:
 # ---------- Helpers ----------
 
 def _build_flux_query(
-    bucket: str, measurement: str, time_range: str, query_type: str, result_size: str
+    bucket: str, measurement: str, time_range: str, query_type: str, result_size: str, run_id: Optional[str] = None
 ) -> str:
     """
     Builds a simple Flux-Query depending on query_type and result_size.
@@ -57,6 +59,11 @@ from(bucket: "{bucket}")
   |> range(start: -{time_range})
   |> filter(fn: (r) => r["_measurement"] == "{measurement}")
 '''.strip()
+
+    if run_id:
+        base = f"""{base}
+  |> filter(fn: (r) => r["run_id"] == "{run_id}")
+""".strip()
 
     if query_type == "filter":
         flux = f"""{base}
@@ -195,8 +202,17 @@ def _run_single_query(
 
 
 def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
+    """Return an aggregated summary in the same shape that we export to MAIN."""
     if not runs:
-        return {}
+        return {
+            "total_runs": 0,
+            "errors_count": 0,
+            "error_rate": 0.0,
+            "latency_stats": {},
+            "bytes_stats": {},
+            "rows_stats": {},
+            "throughput": {},
+        }
 
     def safe_vals(fn: str):
         vals = [getattr(r, fn) for r in runs if getattr(r, fn) is not None]
@@ -228,89 +244,94 @@ def _summarize_query_runs(runs: List[QueryRunMetrics]) -> Dict[str, Any]:
     if duration_avg and rows_vals:
         throughput_rows_per_s = statistics.mean(rows_vals) / duration_avg
 
+    total_runs = len(runs)
+    errors_count = len([r for r in runs if not r.ok])
+
+    # parallel run -> wall duration ~= max(total_time_s)
+    total_duration_s = max(ttotal) if ttotal else 0.0
+    queries_count = total_runs
+
+    throughput_queries_per_s = (queries_count / total_duration_s) if total_duration_s > 0 else None
+    throughput_bytes_per_s = (sum(bytes_vals) / total_duration_s) if total_duration_s > 0 and bytes_vals else None
+    throughput_rows_per_s = (sum(rows_vals) / total_duration_s) if total_duration_s > 0 and rows_vals else None
+
+    ttf_stats = agg(ttf)
+    total_stats = agg(ttotal)
+
     return {
-        "time_to_first_result_s": agg(ttf),
-        "total_time_s": agg(ttotal),
-        "bytes_returned": agg(bytes_vals),
-        "rows_returned": agg(rows_vals),
+        "queries_count": queries_count,
+        "total_duration_s": total_duration_s,
+        "total_runs": total_runs,
+        "errors_count": errors_count,
+        "error_rate": (errors_count / total_runs) if total_runs else 0.0,
+        "latency_stats": {
+            "ttf_min": ttf_stats["min"],
+            "ttf_max": ttf_stats["max"],
+            "ttf_avg": ttf_stats["avg"],
+            "ttf_median": ttf_stats["median"],
+            "total_min": total_stats["min"],
+            "total_max": total_stats["max"],
+            "total_avg": total_stats["avg"],
+            "total_median": total_stats["median"],
+        },
+        "bytes_stats": agg(bytes_vals),
+        "rows_stats": agg(rows_vals),
         "throughput": {
+            "queries_per_s": throughput_queries_per_s,
             "bytes_per_s": throughput_bytes_per_s,
             "rows_per_s": throughput_rows_per_s,
         },
-        "error_rate": error_rate,
     }
 
-
-
-
-def _build_query_export_point(
-    *,
-    context: Context,
+def build_query_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
-    runs: List["QueryRunMetrics"],
 ) -> Point:
-    """Build the Point for exporting a generic query benchmark summary to MAIN Influx."""
-
-    ttf_stats = summary.get("time_to_first_result_s", {}) or {}
-    total_time_stats = summary.get("total_time_s", {}) or {}
-    bytes_stats = summary.get("bytes_returned", {}) or {}
-    rows_stats = summary.get("rows_returned", {}) or {}
+    latency_stats = summary.get("latency_stats", {}) or {}
+    bytes_stats = summary.get("bytes_stats", {}) or {}
+    rows_stats = summary.get("rows_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
-    error_rate = float(summary.get("error_rate", 0.0) or 0.0)
 
-    total_runs = len(runs)
-    errors_count = len([r for r in runs if not getattr(r, "ok", False)])
-
-    def _f(d: Dict[str, Any], key: str) -> float:
-        v = d.get(key)
-        return float(v) if v is not None else 0.0
-
-    p = generate_base_point(
-        context=context,
-        measurement="bddbench_query_result",
-        scenario_id=scenario_id,
+    return (
+        Point("bddbench_query_result")
+        .tag("measurement", str(meta.get("measurement", "")))
+        .tag("time_range", str(meta.get("time_range", "")))
+        .tag("query_type", str(meta.get("query_type", "")))
+        .tag("result_size", str(meta.get("result_size", "")))
+        .tag("output_format", str(meta.get("output_format", "")))
+        .tag("compression", str(meta.get("compression", "")))
+        .tag("sut_bucket", str(meta.get("bucket", "")))
+        .tag("sut_org", str(meta.get("org", "")))
+        .tag("sut_influx_url", str(meta.get("sut_url", "")))
+        .tag("scenario_id", scenario_id or "")
+        .field("concurrent_clients", int(meta.get("concurrent_clients", 0)))
+        .field("queries_count", int(summary.get("queries_count", 0)))
+        .field("total_duration_s", float(summary.get("total_duration_s", 0.0)))
+        .field("total_runs", int(summary.get("total_runs", 0)))
+        .field("errors_count", int(summary.get("errors_count", 0)))
+        .field("error_rate", float(summary.get("error_rate", 0.0)))
+        .field(
+            "throughput_queries_per_s",
+            float(throughput.get("queries_per_s") or 0.0),
+        )
+        .field(
+            "throughput_rows_per_s",
+            float(throughput.get("rows_per_s") or 0.0),
+        )
+        .field(
+            "throughput_bytes_per_s",
+            float(throughput.get("bytes_per_s") or 0.0),
+        )
+        .field("ttf_min_s", float(latency_stats.get("ttf_min") or 0.0))
+        .field("ttf_max_s", float(latency_stats.get("ttf_max") or 0.0))
+        .field("ttf_avg_s", float(latency_stats.get("ttf_avg") or 0.0))
+        .field("ttf_median_s", float(latency_stats.get("ttf_median") or 0.0))
+        .field("total_min_s", float(latency_stats.get("total_min") or 0.0))
+        .field("total_max_s", float(latency_stats.get("total_max") or 0.0))
+        .field("total_avg_s", float(latency_stats.get("total_avg") or 0.0))
+        .field("total_median_s", float(latency_stats.get("total_median") or 0.0))
     )
-
-    # step-specific tags
-    p.tag("source_measurement", str(meta.get("measurement", "")))
-    p.tag("time_range", str(meta.get("time_range", "")))
-    p.tag("query_type", str(meta.get("query_type", "")))
-    p.tag("result_size", str(meta.get("result_size", "")))
-    p.tag("output_format", str(meta.get("output_format", "")))
-    p.tag("compression", str(meta.get("compression", "")))
-
-    # fields
-    p.field("total_runs", int(total_runs))
-    p.field("errors_count", int(errors_count))
-    p.field("error_rate", error_rate)
-
-    p.field("ttf_min_s", _f(ttf_stats, "min"))
-    p.field("ttf_max_s", _f(ttf_stats, "max"))
-    p.field("ttf_avg_s", _f(ttf_stats, "avg"))
-    p.field("ttf_median_s", _f(ttf_stats, "median"))
-
-    p.field("total_time_min_s", _f(total_time_stats, "min"))
-    p.field("total_time_max_s", _f(total_time_stats, "max"))
-    p.field("total_time_avg_s", _f(total_time_stats, "avg"))
-    p.field("total_time_median_s", _f(total_time_stats, "median"))
-
-    p.field("bytes_min", _f(bytes_stats, "min"))
-    p.field("bytes_max", _f(bytes_stats, "max"))
-    p.field("bytes_avg", _f(bytes_stats, "avg"))
-    p.field("bytes_median", _f(bytes_stats, "median"))
-
-    p.field("rows_min", _f(rows_stats, "min"))
-    p.field("rows_max", _f(rows_stats, "max"))
-    p.field("rows_avg", _f(rows_stats, "avg"))
-    p.field("rows_median", _f(rows_stats, "median"))
-
-    p.field("throughput_bytes_per_s", float(throughput.get("bytes_per_s") or 0.0))
-    p.field("throughput_rows_per_s", float(throughput.get("rows_per_s") or 0.0))
-
-    return p
-
 
 def _export_query_result_to_main_influx(
     meta: Dict[str, Any],
@@ -319,17 +340,57 @@ def _export_query_result_to_main_influx(
     outfile: str,
     context: Context,
 ) -> None:
-    """Sends a compact summary of the query benchmark result to MAIN InfluxDB (if configured)."""
+    """
+    Exports a compact summary of the query benchmark to the 'main' InfluxDB.
 
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning.
+    """
+    if not main_influx_is_configured(context):
+        logger.info(" MAIN influx not configured – skipping export")
+        return
+
+    main = context.influxdb.main
+    strict = bool(getattr(context.influxdb, "export_strict", False))
+
+    client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        logger.info(" MAIN write_api missing – skipping export")
+        return
+
+    total_runs = len(runs)
+    errors_count = len([r for r in runs if not r.ok])
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("query-",))
-    p = _build_query_export_point(
-        context=context,
+
+    p = build_query_export_point(
         meta=meta,
         summary=summary,
         scenario_id=scenario_id,
-        runs=runs,
     )
-    export_point_to_main_influx(context=context, point=p, bench_label="query", logger_=logger)
+
+    try:
+        write_to_influx(
+            write_api=write_api,
+            bucket=main.bucket,
+            org=main.org,
+            record=p,
+            logger_=logger,
+            strict=strict,
+            success_msg="Exported write result to MAIN Influx",
+            failure_prefix="MAIN export failed",
+        )
+    except ApiException as exc:
+        msg = f" MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f" MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger.warning(msg)
 
 
 # ----------- Scenario Steps -------------
@@ -363,6 +424,7 @@ def step_run_query_benchmark(
         time_range,
         query_type,
         result_size,
+        run_id=getattr(context, "run_id", None),
     )
 
     runs: List[QueryRunMetrics] = []
@@ -386,6 +448,7 @@ def step_run_query_benchmark(
 
     context.query_runs = runs
     context.query_benchmark_meta = {
+        "run_id": getattr(context, "run_id", None),
         "measurement": measurement,
         "time_range": time_range,
         "query_type": query_type,
