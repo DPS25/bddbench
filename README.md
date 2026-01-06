@@ -169,20 +169,6 @@ These variables configure connections to your InfluxDB instances. For example:
 
 ---
 
-## parallel_stress command
-```bash
-python features/steps/parallel_stress.py \
-  --host nixos@"hostname" \
-  --presets cpu4 \
-  --feature features/influx_query_benchmark.feature \
-  --tags "query and normal"
-```
-- hostname of SUT can be found in your local config file under ```~/.ssh/config```
-- stress presets are found in ```hosts/dsp25-base.nix``` in the nix repo
-
-
----
-
 ## Adding Packages
 
 If you need extra Python packages inside the Nix shell, use `uv`:
