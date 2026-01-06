@@ -12,7 +12,6 @@ from typing import List, Optional, Sequence, Tuple, Any, Dict
 
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
-from influxdb_client.rest import ApiException
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 
@@ -72,6 +71,45 @@ def _size_to_bytes(value: str) -> int:
 # =====================================================================
 # Generic Helpers for all influx benchmarks
 # =====================================================================
+from influxdb_client.rest import ApiException
+
+def write_to_influx(
+    *,
+    write_api: Any,
+    bucket: str,
+    org: str,
+    record: Any,
+    logger_: Optional[logging.Logger] = None,
+    strict: bool = False,
+    success_msg: str | None = None,
+    failure_prefix: str = "Influx write failed",
+) -> None:
+    try:
+        write_api.write(bucket=bucket, org=org, record=record)
+        if logger_ and success_msg:
+            logger_.info(success_msg)
+    except ApiException as exc:
+        msg = f"{failure_prefix}: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        if logger_:
+            logger_.warning(msg)
+    except Exception as exc:
+        msg = f"{failure_prefix}: {exc}"
+        if strict:
+            raise
+        if logger_:
+            logger_.warning(msg)
+
+
+def generate_base_point(context: Context, measurement: str) -> Point:
+    sut = context.influxdb.sut
+    return (
+        Point(measurement)
+        .tag("sut_bucket", str(getattr(sut, "bucket", "")))
+        .tag("sut_org", str(getattr(sut, "org", "")))
+        .tag("sut_influx_url", str(getattr(sut, "url", "")))
+    )
 
 def influx_precision_from_str(p: str) -> WritePrecision:
     """
@@ -108,6 +146,7 @@ def build_benchmark_point(
     tag_cardinality: int,
     time_ordering: str,
     precision: WritePrecision,
+    run_id: Optional[str] = None,
 ) -> Point:
     """
     used in influx_write and influx_multi_bucket
@@ -128,26 +167,30 @@ def build_benchmark_point(
         ts = base_ts + idx
 
     p = Point(measurement).tag("device_id", f"dev-{device_id}")
+    if run_id:
+        p = p.tag("run_id", str(run_id))
 
     p = p.field("value", float(idx)).field("seq", idx)
 
-    if point_complexity == "high":
-        p = (
-            p.field("aux1", float(idx % 100))
-             .field("aux2", math.sin(idx))
-             .field("aux3", math.cos(idx))
-        )
+    # Feature files currently use low/medium/high. Keep backwards compatibility:
+    # - medium: one extra field
+    # - high:   several extra fields
+    pc = (point_complexity or "").lower()
+    if pc in {"medium", "high"}:
+        p = p.field("aux1", float(idx % 100))
+    if pc == "high":
+        p = p.field("aux2", math.sin(idx)).field("aux3", math.cos(idx))
 
     p = p.time(ts, precision)
     return p
 
 def scenario_id_from_outfile(outfile: str, prefixes: Sequence[str]) -> str:
     """
-    used in:
-    influx_write,
-    influx_query,
-    influx_multi_bucket,
-    influx_delete,
+    used in: 
+    influx_write, 
+    influx_query, 
+    influx_multi_bucket, 
+    influx_delete, 
     influx_user
 
     extracts a scenario_id from a report-filename
@@ -219,70 +262,6 @@ def get_main_influx_write_api(
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
     return client, write_api
-
-
-def generate_base_point(
-    *,
-    context: Context,
-    measurement: str,
-    scenario_id: str,
-) -> Point:
-    """Create a base Point with common tags used across all benchmark result exports."""
-    p = Point(measurement).tag("scenario_id", scenario_id or "")
-
-    # SUT metadata (where the benchmark ran)
-    sut = getattr(getattr(context, "influxdb", None), "sut", None)
-    if sut is not None:
-        if getattr(sut, "bucket", None):
-            p.tag("sut_bucket", str(sut.bucket))
-        if getattr(sut, "org", None):
-            p.tag("sut_org", str(sut.org))
-        if getattr(sut, "url", None):
-            p.tag("sut_influx_url", str(sut.url))
-
-    return p
-
-
-def export_point_to_main_influx(
-    *,
-    context: Context,
-    point: Point,
-    bench_label: str,
-    logger_: logging.Logger,
-) -> None:
-    """Write a pre-built Point into MAIN Influx (if configured).
-
-    Controlled by INFLUXDB_EXPORT_STRICT:
-      - "1"/"true"/"yes": export failures raise (fail scenario)
-      - otherwise: export failures only log a warning.
-    """
-    if not main_influx_is_configured(context):
-        logger_.info("MAIN influx not configured – skipping export")
-        return
-
-    main = context.influxdb.main
-    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
-
-    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
-    if write_api is None:
-        logger_.info("MAIN write_api missing – skipping export")
-        return
-
-    try:
-        write_api.write(bucket=main.bucket, org=main.org, record=point)
-        logger_.info("Exported %s result to MAIN Influx", bench_label)
-    except ApiException as exc:
-        msg = f"MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
-        if strict:
-            raise
-        logger_.warning(msg)
-    except Exception as exc:
-        msg = f"MAIN export failed: {exc}"
-        if strict:
-            raise
-        logger_.warning(msg)
-
-
 
 def write_json_report(
     outfile: str,
