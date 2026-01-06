@@ -231,13 +231,13 @@ def _export_to_main_influx(context, outfile: str) -> None:
         logger.info(" MAIN influx not configured – skipping export")
         return
 
-    strict = os.getenv("INFLUXDB_EXPORT_STRICT", "0").strip().lower() in ("1", "true", "yes")
+    strict = bool(getattr(context.influxdb, "export_strict", False))
     main = context.influxdb.main
 
     # client/write_api wie bei den anderen Benchmarks holen
     client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
     if write_api is None:
-        msg = "MAIN write_api missing – skipping export"
+        msg = " MAIN write_api missing – skipping export"
         if strict:
             raise RuntimeError(msg)
         logger.warning(msg)
