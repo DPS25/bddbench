@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import statistics
+from influxdb_client.rest import ApiException
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any
 
@@ -15,14 +16,16 @@ from src.utils import (
     build_benchmark_point,
     write_json_report,
     scenario_id_from_outfile,
-    generate_base_point,
-    export_point_to_main_influx,
+    main_influx_is_configured,
+    get_main_influx_write_api,
+    write_to_influx,
 )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger(f"bddbench.steps.influx_write_steps")
+logger = logging.getLogger(f"bddbench.influx_write_steps")
 
 # ----------- Datatype ------------
+
 
 @dataclass
 class BatchWriteMetrics:
@@ -32,58 +35,99 @@ class BatchWriteMetrics:
     status_code: int
     ok: bool
 
+
 # ---------- Helpers ----------
 def _maybe_cleanup_before_run(context, measurement: str):
     # cleanup logic not implemented
     logging.debug(
-        f"NOTE: cleanup for measurement={measurement} is not implemented here."
+        f" NOTE: cleanup for measurement={measurement} is not implemented here."
     )
 
-def _build_write_export_point(*, context: Context, meta: Dict[str, Any], summary: Dict[str, Any], scenario_id: str) -> Point:
-    """Build the Point used for exporting a generic write benchmark result to MAIN Influx."""
+def build_write_export_point(
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    scenario_id: str,
+) -> Point:
     latency_stats = summary.get("latency_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
 
-    p = generate_base_point(
-        context=context,
-        measurement="bddbench_write_result",
-        scenario_id=scenario_id,
+    return (
+        Point("bddbench_write_result")
+        .tag("source_measurement", str(meta.get("measurement", "")))
+        .tag("compression", str(meta.get("compression", "")))
+        .tag("precision", str(meta.get("precision", "")))
+        .tag("point_complexity", str(meta.get("point_complexity", "")))
+        .tag("time_ordering", str(meta.get("time_ordering", "")))
+        .tag("sut_bucket", str(meta.get("bucket", "")))
+        .tag("sut_org", str(meta.get("org", "")))
+        .tag("sut_influx_url", str(meta.get("sut_url", "")))
+        .tag("scenario_id", scenario_id or "")
+        .field("total_points", int(meta.get("total_points", 0)))
+        .field("total_batches", int(meta.get("total_batches", 0)))
+        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
+        .field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
+        .field("error_rate", float(summary.get("error_rate", 0.0)))
+        .field("errors_count", int(summary.get("errors_count", 0)))
+        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
+        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
+        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
+        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
     )
-
-    # tags (step-specific)
-    p.tag("source_measurement", str(meta.get("measurement", "")))
-    p.tag("compression", str(meta.get("compression", "")))
-    p.tag("precision", str(meta.get("precision", "")))
-    p.tag("point_complexity", str(meta.get("point_complexity", "")))
-    p.tag("time_ordering", str(meta.get("time_ordering", "")))
-
-    # fields
-    p.field("total_points", int(meta.get("total_points", 0)))
-    p.field("total_batches", int(meta.get("total_batches", 0)))
-    p.field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
-    p.field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
-    p.field("error_rate", float(summary.get("error_rate", 0.0)))
-    p.field("errors_count", int(summary.get("errors_count", 0)))
-    p.field("latency_min_s", float(latency_stats.get("min") or 0.0))
-    p.field("latency_max_s", float(latency_stats.get("max") or 0.0))
-    p.field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
-    p.field("latency_median_s", float(latency_stats.get("median") or 0.0))
-
-    return p
 
 def _export_write_result_to_main_influx(
     result: Dict[str, Any],
     outfile: str,
     context: Context,
 ) -> None:
-    """Sends a compact summary of the write benchmark result to MAIN InfluxDB (if configured)."""
+    """
+    Sends a compact summary of the write benchmark result to the 'main' InfluxDB.
+
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning
+    """
+    if not main_influx_is_configured(context):
+        logger.info(" MAIN influx not configured – skipping export")
+        return
+
+    main = context.influxdb.main
+    strict = bool(getattr(context.influxdb, "export_strict", False))
+
+    client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        logger.info(" MAIN write_api missing – skipping export")
+        return
+
     meta = result.get("meta", {})
     summary = result.get("summary", {})
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("write-",))
 
-    p = _build_write_export_point(context=context, meta=meta, summary=summary, scenario_id=scenario_id)
-    export_point_to_main_influx(context=context, point=p, bench_label="write", logger_=logger)
+    # >>> hier kommt jetzt der Utils-Helper zum Einsatz <<<
+    p = build_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
 
+    try:
+        write_to_influx(
+            write_api=write_api,
+            bucket=main.bucket,
+            org=main.org,
+            record=p,
+            logger_=logger,
+            strict=strict,
+            success_msg="Exported write result to MAIN Influx",
+            failure_prefix="MAIN export failed",
+        )
+    except ApiException as exc:
+        msg = f" MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f" MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger.warning(msg)
+        
 def _run_writer_worker(
     writer_id: int,
     client: InfluxDBClient,
@@ -97,6 +141,7 @@ def _run_writer_worker(
     tag_cardinality: int,
     time_ordering: str,
     base_ts: int,
+    run_id: str | None,
 ) -> List[BatchWriteMetrics]:
     """
     A writer writes `batches` batches per `batch_size` points
@@ -119,6 +164,7 @@ def _run_writer_worker(
                 tag_cardinality=tag_cardinality,
                 time_ordering=time_ordering,
                 precision=precision_enum,
+                run_id=run_id
             )
             points.append(p)
 
@@ -148,7 +194,7 @@ def _run_writer_worker(
                 status_code=500,
                 ok=False,
             )
-            logging.info(f"writer={writer_id} batch={batch_index} failed: {exc}")
+            logging.info(f" writer={writer_id} batch={batch_index} failed: {exc}")
 
         metrics.append(m)
 
@@ -220,7 +266,7 @@ def step_run_write_benchmark(
     all_metrics: List[BatchWriteMetrics] = []
 
     started_at = time.perf_counter()
-    try:
+    try:    
         with ThreadPoolExecutor(max_workers=parallel_writers) as executor:
             futures = [
                 executor.submit(
@@ -237,6 +283,7 @@ def step_run_write_benchmark(
                     tag_cardinality=tag_cardinality,
                     time_ordering=time_ordering,
                     base_ts=base_ts,
+                    run_id=getattr(context, "run_id", None)
                 )
                 for w in range(parallel_writers)
             ]
@@ -251,6 +298,7 @@ def step_run_write_benchmark(
     logger.debug(f"completed write benchmark in {total_duration_s:.3f} seconds")
     context.write_batches = all_metrics
     context.write_benchmark_meta = {
+        "run_id": getattr(context, "run_id", None),
         "measurement": measurement,
         "batch_size": batch_size,
         "parallel_writers": parallel_writers,
