@@ -229,12 +229,7 @@ def before_all(context: Context):
     logger.info("------------------------------------------------")
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
-    #@influx tag now fulfills its taks
-    if _env_truthy("INFLUXDB_AUTOINIT", "0"):
-        _ensure_influx_initialized(context)
-    else:
-        logger.info("Skipping influx init in before_all (lazy init via @influx tags).")
-
+    _ensure_influx_initialized(context)
 
 def before_feature(context: Context, feature: Feature):
     """
@@ -244,9 +239,6 @@ def before_feature(context: Context, feature: Feature):
     :return:
     """
     logger.debug(f"=== starting feature: {feature.name} ===")
-    #Only initialize influx when a feature actually needs it
-    if "influx" in getattr(feature, "tags", []):
-        _ensure_influx_initialized(context)
 
 def after_feature(context: Context, feature: Feature):
     """
@@ -276,8 +268,6 @@ def before_scenario(context: Context, scenario: Scenario):
     context.run_id = uuid.uuid4().hex
     
     logger.debug(f"-- starting scenario: {scenario.name}")
-    if "influx" in getattr(scenario, "tags", []):
-        _ensure_influx_initialized(context)
 
 def after_scenario(context: Context, scenario: Scenario):
     """
