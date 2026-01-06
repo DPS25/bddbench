@@ -1,4 +1,4 @@
-import logging, os
+import logging, os, uuid
 from types import SimpleNamespace
 from dotenv import load_dotenv
 from pathlib import Path
@@ -75,6 +75,8 @@ def _load_env(context: Context):
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
     context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
     context.influxdb.sut = getattr(context.influxdb, "sut", SimpleNamespace())
+
+    context.influxdb.export_strict = _env_truthy("INFLUXDB_EXPORT_STRICT", "0")
 
     # ----- main influx DB -----
     require_main = _env_truthy("INFLUXDB_REQUIRE_MAIN", "0")
@@ -221,12 +223,17 @@ def before_all(context: Context):
     :param context:
     :return:
     """
+    context.run_id = None
 
     _setup_logging(context)
     logger.info("------------------------------------------------")
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
-    _ensure_influx_initialized(context)
+    #@influx tag now fulfills its taks
+    if _env_truthy("INFLUXDB_AUTOINIT", "0"):
+        _ensure_influx_initialized(context)
+    else:
+        logger.info("Skipping influx init in before_all (lazy init via @influx tags).")
 
 
 def before_feature(context: Context, feature: Feature):
@@ -266,6 +273,8 @@ def before_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
+    context.run_id = uuid.uuid4().hex
+    
     logger.debug(f"-- starting scenario: {scenario.name}")
     if "influx" in getattr(scenario, "tags", []):
         _ensure_influx_initialized(context)
