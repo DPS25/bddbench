@@ -9,6 +9,7 @@ from behave import when, then
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, WritePrecision, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client.rest import ApiException
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils import (
@@ -17,11 +18,12 @@ from src.utils import (
     build_benchmark_point,
     write_json_report,
     scenario_id_from_outfile,
-    generate_base_point,
-    export_point_to_main_influx,
+    main_influx_is_configured,
+    get_main_influx_write_api,
+    write_to_influx,
 )
 
-logger = logging.getLogger("bddbench.steps.influx_multi_bucket_steps")
+logger = logging.getLogger("bddbench.influx_multi_bucket_steps")
 
 
 # ----------- Datatypes ------------
@@ -36,56 +38,103 @@ class BatchWriteMetrics:
 
 
 # ---------- Helpers ----------
-
-def _build_multi_write_export_point(
-    *,
-    context: Context,
+def build_multi_write_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
 ) -> Point:
-    """Builds the Point for exporting a multi-bucket write benchmark summary to MAIN Influx."""
     latency_stats = summary.get("latency_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
 
-    p = generate_base_point(context=context, measurement="bddbench_multi_write_result", scenario_id=scenario_id)
-    # tags
-    p.tag("source_measurement", str(meta.get("measurement", "")))
-    p.tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
-    p.tag("compression", str(meta.get("compression", "")))
-    p.tag("precision", str(meta.get("precision", "")))
-    p.tag("point_complexity", str(meta.get("point_complexity", "")))
-    p.tag("time_ordering", str(meta.get("time_ordering", "")))
-    p.tag("sut_bucket_pattern", str(meta.get("bucket", "")))
-    # fields
-    p.field("bucket_count", int(meta.get("bucket_count", 0) or 0))
-    p.field("total_points", int(meta.get("total_points", 0) or 0))
-    p.field("total_duration_s", float(meta.get("total_duration_s", 0.0) or 0.0))
-    p.field("throughput_points_per_s", float(throughput.get("points_per_s") or 0.0))
-    p.field("error_rate", float(summary.get("error_rate", 0.0) or 0.0))
-    p.field("errors_count", int(summary.get("errors_count", 0) or 0))
-    p.field("latency_min_s", float(latency_stats.get("min") or 0.0))
-    p.field("latency_max_s", float(latency_stats.get("max") or 0.0))
-    p.field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
-    p.field("latency_median_s", float(latency_stats.get("median") or 0.0))
-    return p
-
+    return (
+        Point("bddbench_multi_write_result")
+        .tag("source_measurement", str(meta.get("measurement", "")))
+        .tag("compression", str(meta.get("compression", "")))
+        .tag("precision", str(meta.get("precision", "")))
+        .tag("point_complexity", str(meta.get("point_complexity", "")))
+        .tag("time_ordering", str(meta.get("time_ordering", "")))
+        .tag("sut_bucket_prefix", str(meta.get("bucket_prefix", "")))
+        .tag("sut_org", str(meta.get("org", "")))
+        .tag("sut_influx_url", str(meta.get("sut_url", "")))
+        .tag("scenario_id", scenario_id or "")
+        .field("bucket_count", int(meta.get("bucket_count", 0)))
+        .field("total_points", int(meta.get("total_points", 0)))
+        .field("total_batches", int(meta.get("total_batches", 0)))
+        .field("total_duration_s", float(meta.get("total_duration_s", 0.0)))
+        .field(
+            "throughput_points_per_s",
+            float(throughput.get("points_per_s") or 0.0),
+        )
+        .field("error_rate", float(summary.get("error_rate", 0.0)))
+        .field("errors_count", int(summary.get("errors_count", 0)))
+        .field("latency_min_s", float(latency_stats.get("min") or 0.0))
+        .field("latency_max_s", float(latency_stats.get("max") or 0.0))
+        .field("latency_avg_s", float(latency_stats.get("avg") or 0.0))
+        .field("latency_median_s", float(latency_stats.get("median") or 0.0))
+    )
 
 def _export_multi_write_result_to_main_influx(
     result: Dict[str, Any],
     outfile: str,
     context: Context,
 ) -> None:
-    """Sends a compact summary of the multi-bucket write benchmark result to MAIN InfluxDB (if configured)."""
+    """
+    Sends a compact summary of the multi-bucket write benchmark result to the
+    'main' InfluxDB.
+
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning.
+    """
+    if not main_influx_is_configured(context):
+        logger.info(" MAIN influx not configured – skipping export")
+        return
+
+    main = context.influxdb.main
+    strict = bool(getattr(context.influxdb, "export_strict", False))
+
+    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        logger.info(" MAIN write_api missing – skipping export")
+        return
+
     meta = result.get("meta", {})
     summary = result.get("summary", {})
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("multi-write-",))
 
-    p = _build_multi_write_export_point(context=context, meta=meta, summary=summary, scenario_id=scenario_id)
-    export_point_to_main_influx(context=context, point=p, bench_label="multi_write", logger_=logger)
+    p = build_multi_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
+
+    try:
+        write_to_influx(
+            write_api=write_api,
+            bucket=main.bucket,
+            org=main.org,
+            record=p,
+            logger_=logger,
+            strict=strict,
+            success_msg="Exported write result to MAIN Influx",
+            failure_prefix="MAIN export failed",
+        )
+    except ApiException as exc:
+        msg = f" MAIN export failed: HTTP {exc.status} {exc.reason} - {exc.body}"
+        if strict:
+            raise
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f" MAIN export failed: {exc}"
+        if strict:
+            raise
+        logger.warning(msg)
 
 
-def _create_bucket_compat(buckets_api: Any, bucket_name: str, org: str) -> None:
+def _create_bucket_compat(
+    buckets_api: Any,
+    *,
+    bucket_name: str,
+    org: str,
+    org_id: str | None,
+) -> None:
     """
     InfluxDB client versions differ: some expect org=..., others org_id=...
     We try both to avoid hard failures.
@@ -93,7 +142,10 @@ def _create_bucket_compat(buckets_api: Any, bucket_name: str, org: str) -> None:
     try:
         buckets_api.create_bucket(bucket_name=bucket_name, org=org)
     except TypeError:
-        raise
+        if not org_id:
+            raise
+        buckets_api.create_bucket(bucket_name=bucket_name, org_id=org_id)
+
 
 def _resolve_org_id(client: InfluxDBClient, org: str) -> str:
     orgs_api = client.organizations_api()
@@ -115,6 +167,7 @@ def _run_duration_writer_worker(
     time_ordering: str,
     base_ts: int,
     stop_at: float,
+    run_id: str | None,
 ) -> List[BatchWriteMetrics]:
     """
     A writer repeatedly writes batches of points until stop_at is reached and
@@ -140,6 +193,7 @@ def _run_duration_writer_worker(
                 tag_cardinality=tag_cardinality,
                 time_ordering=time_ordering,
                 precision=precision_enum,
+                run_id=run_id,
             )
             p = p.tag("writer_id", str(writer_id))
             points.append(p)
@@ -169,7 +223,7 @@ def _run_duration_writer_worker(
                 ok=False,
             )
             logger.info(
-                "writer=%s batch=%s failed: %s",
+                " writer=%s batch=%s failed: %s",
                 writer_id,
                 batch_index,
                 exc,
@@ -222,26 +276,24 @@ def step_run_multi_bucket_write_benchmark(
         buckets_api = bench_client.buckets_api()
 
         created_buckets: List[str] = []
-        for i in range(bucket_count):
-            org_id = None
-            try:
-                org_id = _resolve_org_id(bench_client, org)
-            except Exception as exc:
-                logger.info("Could not resolve org_id (will try org=... path): %s", exc)
+
+        org_id: str | None = None
+        try:
+            org_id = _resolve_org_id(bench_client, org)
+        except Exception as exc:
+            logger.info("Could not resolve org_id (will try org=... path): %s", exc)
 
         for i in range(bucket_count):
             bucket_name = f"{bucket_prefix}_{i}"
             try:
-                _create_bucket_compat(buckets_api, bucket_name=bucket_name, org=org)
-                try:
-                    _create_bucket_compat(buckets_api, bucket_name=bucket_name, org=org)
-                except TypeError:
-                    if not org_id:
-                        raise
-                    buckets_api.create_bucket(bucket_name=bucket_name, org_id=org_id)
+                _create_bucket_compat(
+                    buckets_api,
+                    bucket_name=bucket_name,
+                    org=org,
+                    org_id=org_id,
+                )
                 logger.info("Created bucket: %s", bucket_name)
             except Exception as exc:
-                # If it already exists, the benchmark can still proceed
                 logger.info("Bucket %s may already exist: %s", bucket_name, exc)
             created_buckets.append(bucket_name)
 
@@ -277,6 +329,7 @@ def step_run_multi_bucket_write_benchmark(
                             time_ordering=time_ordering,
                             base_ts=base_ts,
                             stop_at=stop_at,
+                            run_id=getattr(context, "run_id", None),
                         )
                     )
 
@@ -285,9 +338,11 @@ def step_run_multi_bucket_write_benchmark(
 
         total_duration_s = time.perf_counter() - started_at
         total_points = sum(m.points for m in all_metrics)
+        total_batches = len(all_metrics)
 
         context.multi_write_batches = all_metrics
         context.multi_write_benchmark_meta = {
+            "run_id": getattr(context, "run_id", None),
             "measurement": measurement,
             "bucket_prefix": bucket_prefix,
             "bucket_count": bucket_count,
@@ -302,6 +357,7 @@ def step_run_multi_bucket_write_benchmark(
             "org": org,
             "sut_url": url,
             "total_points": total_points,
+            "total_batches": total_batches,
             "total_duration_s": total_duration_s,
         }
 
