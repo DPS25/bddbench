@@ -1,4 +1,4 @@
-import logging, os
+import logging, os, uuid
 from types import SimpleNamespace
 from dotenv import load_dotenv
 from pathlib import Path
@@ -84,6 +84,8 @@ def _load_env(context: Context):
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
     context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
     context.influxdb.sut = getattr(context.influxdb, "sut", SimpleNamespace())
+
+    context.influxdb.export_strict = _env_truthy("INFLUXDB_EXPORT_STRICT", "0")
 
     # ----- main influx DB -----
     require_main = _env_truthy("INFLUXDB_REQUIRE_MAIN", "0")
@@ -269,6 +271,7 @@ def before_all(context: Context):
     :param context:
     :return:
     """
+    context.run_id = None
 
     _setup_logging(context)
     logger.info("------------------------------------------------")
@@ -279,7 +282,6 @@ def before_all(context: Context):
     context._stress_active = False
     context._stress_presets = (context.config.userdata.get("stress_presets") or "cpu4")
 
-
 def before_feature(context: Context, feature: Feature):
     """
     Log the start of a feature.
@@ -288,9 +290,6 @@ def before_feature(context: Context, feature: Feature):
     :return:
     """
     logger.debug(f"=== starting feature: {feature.name} ===")
-    #Only initialize influx when a feature actually needs it
-    if "influx" in getattr(feature, "tags", []):
-        _ensure_influx_initialized(context)
 
 def after_feature(context: Context, feature: Feature):
     """
@@ -319,9 +318,9 @@ def before_scenario(context: Context, scenario: Scenario):
     :param scenario:
     :return:
     """
+    context.run_id = uuid.uuid4().hex
+    
     logger.debug(f"-- starting scenario: {scenario.name}")
-    if "influx" in getattr(scenario, "tags", []):
-        _ensure_influx_initialized(context)
 
 def after_scenario(context: Context, scenario: Scenario):
     """

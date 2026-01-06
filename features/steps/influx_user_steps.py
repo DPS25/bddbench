@@ -1,12 +1,10 @@
 import logging
 import time
-import json
 import uuid
 import random
 import string
 import statistics
 import os
-from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +14,12 @@ from behave import when, then
 from influxdb_client import InfluxDBClient
 
 from src.measurements.UserPerformancePoint import UserPerformancePoint
+from src.utils import (
+    write_json_report,
+    scenario_id_from_outfile,
+    main_influx_is_configured,
+    get_main_influx_write_api,
+)
 
 logger = logging.getLogger("bddbench.influx_user_steps")
 
@@ -30,19 +34,6 @@ class UserOpMetric:
 
 
 # ---------------- Helpers ----------------
-
-def _scenario_id_from_outfile(outfile: str) -> str:
-    """
-    Mirror write/multi-bucket style:
-    scenario_id derived from report filename like:
-      reports/user-me-smoke.json          -> smoke
-      reports/user-lifecycle-heavy_crud.json -> heavy_crud
-    """
-    base = os.path.basename(outfile)
-    for prefix in ("user-me-", "user-lifecycle-"):
-        if base.startswith(prefix) and base.endswith(".json"):
-            return base[len(prefix):-len(".json")]
-    return ""
 
 
 def _generate_username(complexity: str) -> str:
@@ -93,11 +84,23 @@ def _run_me_worker(
             try:
                 _ = users_api.me()
                 t1 = time.perf_counter()
-                metrics.append(UserOpMetric(latency_s=t1 - t0, ok=True, status_code=200))
+                metrics.append(
+                    UserOpMetric(
+                        latency_s=t1 - t0,
+                        ok=True,
+                        status_code=200,
+                    )
+                )
             except Exception as e:
                 t1 = time.perf_counter()
                 status = getattr(e, "status", 500)
-                metrics.append(UserOpMetric(latency_s=t1 - t0, ok=False, status_code=status))
+                metrics.append(
+                    UserOpMetric(
+                        latency_s=t1 - t0,
+                        ok=False,
+                        status_code=status,
+                    )
+                )
                 time.sleep(0.01)
 
     return metrics
@@ -121,31 +124,39 @@ def _run_lifecycle_worker(
 
         for _ in range(iterations):
             username = _generate_username(username_complexity)
-            _password = _generate_password(password_complexity)  # modeled dimension
+            _password = _generate_password(password_complexity)
 
             t0 = time.perf_counter()
             try:
-                # 1) Create
                 user = users_api.create_user(name=username)
 
-                # 2) Update (change the name)
                 updated_name = f"{username}_upd"
                 user = users_api.update_user(user.id, name=updated_name)
 
-                # 3) Retrieve (find by id)
                 found = users_api.find_users(id=user.id)
                 if not found or not getattr(found, "users", None):
                     raise RuntimeError(f"User {user.id} not found after update")
 
-                # 4) Delete
                 users_api.delete_user(user.id)
 
                 t1 = time.perf_counter()
-                metrics.append(UserOpMetric(latency_s=t1 - t0, ok=True, status_code=201))
+                metrics.append(
+                    UserOpMetric(
+                        latency_s=t1 - t0,
+                        ok=True,
+                        status_code=201,
+                    )
+                )
             except Exception as e:
                 t1 = time.perf_counter()
                 status = getattr(e, "status", 500)
-                metrics.append(UserOpMetric(latency_s=t1 - t0, ok=False, status_code=status))
+                metrics.append(
+                    UserOpMetric(
+                        latency_s=t1 - t0,
+                        ok=False,
+                        status_code=status,
+                    )
+                )
                 logger.debug(f"Lifecycle failed: {e}")
 
     return metrics
@@ -184,9 +195,6 @@ def _summarize_and_store(
         "error_count": len(errors),
     }
 
-    out_path = Path(outfile)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
     final_report = {
         "meta": meta,
         "summary": {
@@ -198,26 +206,51 @@ def _summarize_and_store(
         "created_at": time.time(),
     }
 
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(final_report, f, indent=2)
-
-    logger.info(f"User benchmark saved to {outfile}")
+    write_json_report(
+        outfile,
+        final_report,
+        logger_=logger,
+        log_prefix="User benchmark saved to ",
+    )
 
 
 def _export_to_main_influx(context, outfile: str) -> None:
     """
     Reads context.user_bench_results and writes them to the
     Main InfluxDB using UserPerformancePoint.
-    Tag structure aligned with write/multi-bucket: includes scenario_id + sut_* tags.
+
+    Uses context.influxdb.main.* from environment.py.
+    Controlled by INFLUXDB_EXPORT_STRICT:
+      - "1"/"true"/"yes": export failures raise (fail scenario)
+      - otherwise: export failures only log a warning.
     """
     if not hasattr(context, "user_bench_results"):
+        return
+
+    if not main_influx_is_configured(context):
+        logger.info(" MAIN influx not configured – skipping export")
+        return
+
+    strict = bool(getattr(context.influxdb, "export_strict", False))
+    main = context.influxdb.main
+
+    # client/write_api wie bei den anderen Benchmarks holen
+    client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        msg = " MAIN write_api missing – skipping export"
+        if strict:
+            raise RuntimeError(msg)
+        logger.warning(msg)
         return
 
     data = context.user_bench_results
     meta = data["meta"]
     stats = data["stats"]
 
-    scenario_id = _scenario_id_from_outfile(outfile)
+    scenario_id = scenario_id_from_outfile(
+        outfile,
+        prefixes=("user-me-", "user-lifecycle-"),
+    )
 
     point_data = UserPerformancePoint(
         run_uuid=str(uuid.uuid4()),
@@ -229,7 +262,9 @@ def _export_to_main_influx(context, outfile: str) -> None:
         scenario_id=scenario_id,
 
         operation=str(meta.get("operation", "unknown")),
-        username_complexity=str(meta.get("username_complexity", meta.get("complexity", "none"))),
+        username_complexity=str(
+            meta.get("username_complexity", meta.get("complexity", "none"))
+        ),
         password_complexity=str(meta.get("password_complexity", "none")),
         concurrency=int(meta.get("concurrency", 1)),
 
@@ -249,20 +284,21 @@ def _export_to_main_influx(context, outfile: str) -> None:
         },
     )
 
-    main = context.influxdb.main
-    if getattr(main, "client", None):
-        try:
-            main.write_api.write(
-                bucket=main.bucket,
-                org=main.org,
-                record=point_data.to_point(),
-            )
-            logger.info("Exported user metrics to Main InfluxDB")
-        except Exception as e:
-            logger.error(f"Failed to export to Main InfluxDB: {e}")
-
+    try:
+        write_api.write(
+            bucket=main.bucket,
+            org=main.org,
+            record=point_data.to_point(),
+        )
+        logger.info("Exported user metrics to Main InfluxDB")
+    except Exception as e:
+        msg = f"Failed to export to Main InfluxDB: {e}"
+        if strict:
+            raise
+        logger.error(msg)
 
 # ---------------- Behave Steps ----------------
+
 
 @when('I run a "/me" benchmark with {concurrent_clients:d} concurrent clients for {duration_s:d} seconds')
 def step_run_me_benchmark(context, concurrent_clients: int, duration_s: int) -> None:
@@ -359,4 +395,3 @@ def step_store_user_result(context, outfile: str) -> None:
 
     _summarize_and_store(context, metrics, meta, outfile)
     _export_to_main_influx(context, outfile)
-

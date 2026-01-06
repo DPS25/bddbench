@@ -219,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# vscode extension
+gherkin-poc/pretty.output
+gherkin-poc/*.output
