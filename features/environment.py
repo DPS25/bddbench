@@ -8,7 +8,7 @@ from behave.model import Feature, Scenario, Step
 from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point, WritePrecision
-
+from src.utils import _run_on_sut
 from src.formatter.AnsiColorFormatter import AnsiColorFormatter
 
 logger = logging.getLogger("bddbench.environment")
@@ -23,6 +23,15 @@ def _env_strip(name: str, default: str | None = None) -> str | None:
         return None
     v = str(v).strip()
     return v if v != "" else None
+
+def _should_stress_step(step) -> bool:
+    if step is None:
+        return False
+    if step.keyword.strip().lower() != "when":
+        return False
+
+    name = (step.name or "").lower()
+    return ("benchmark" in name) and ("i run" in name)
 
 def _load_dotenv_files():
     """
@@ -217,6 +226,45 @@ def _ensure_influx_initialized(context: Context):
         _load_env(context)
         return
 
+def run_stress_logic(context: Context, action: str, step: Step | None) -> None:
+    """
+    Start/stop stress-ng systemd presets on the SUT.
+    Uses SUT_SSH via src.utils._run_on_sut().
+    """
+    
+    if step is not None and step.keyword != "When":
+        return
+
+    raw = getattr(context, "_stress_presets", "cpu4")
+    presets = (
+        [p.strip() for p in raw.split(",") if p.strip()]
+        if isinstance(raw, str)
+        else list(raw)
+    )
+
+    if action == "start":
+        if getattr(context, "_stress_active", False):
+            return
+    elif action == "stop":
+        if not getattr(context, "_stress_active", False):
+            return
+    else:
+        raise AssertionError(f"Invalid stress action: {action!r}")
+
+    for preset in presets:
+        unit = f"stress@{preset}.service"
+        try:
+            _run_on_sut(["sudo", "systemctl", action, unit])
+        except Exception as exc:
+            # start must fail the run; stop should not block cleanup
+            if action == "stop":
+                logger.warning("Failed to stop %s: %s", unit, exc)
+            else:
+                raise AssertionError(f"Failed to start {unit}: {exc}") from exc
+
+    context._stress_active = (action == "start")
+
+
 def before_all(context: Context):
     """
     Setup logging before all tests.
@@ -230,6 +278,9 @@ def before_all(context: Context):
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
     _ensure_influx_initialized(context)
+    context.stress = context.config.userdata.get("stress") == "true"
+    context._stress_active = False
+    context._stress_presets = (context.config.userdata.get("stress_presets") or "cpu4")
 
 def before_feature(context: Context, feature: Feature):
     """
@@ -252,10 +303,12 @@ def after_feature(context: Context, feature: Feature):
     )
 
 def before_step(context: Context, step: Step):
-    pass
+    if context.stress and _should_stress_step(step):
+        run_stress_logic(context, "start", step)
 
 def after_step(context: Context, step: Step):
-    pass
+    if context.stress and _should_stress_step(step):
+        run_stress_logic(context, "stop", step)
 
 
 def before_scenario(context: Context, scenario: Scenario):
