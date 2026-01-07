@@ -7,13 +7,39 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Any
 
-from behave import when, then
+from behave import given, when, then
 from behave.runner import Context
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 
 logger = logging.getLogger(f"bddbench.influx_delete_steps")
+
+
+def _load_json_file(p: str) -> dict:
+    fp = Path(p)
+    if not fp.exists():
+        raise FileNotFoundError(f"Expected file at {fp}, but it does not exist")
+    with fp.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@given('I load the write benchmark context from "{infile}"')
+def step_load_write_context(context: Context, infile: str) -> None:
+    """
+    Loads the JSON created by the write step:
+      Then I store the write benchmark context as "reports/write-context-<id>.json"
+
+    Populates `context.write_benchmark_meta` so delete/query steps can use it
+    even when they run in a different scenario (or a different Behave invocation).
+    """
+    data = _load_json_file(infile)
+    meta = data.get("write_benchmark_meta") or data.get("meta")
+    if not isinstance(meta, dict):
+        raise AssertionError(f"{infile} does not contain 'write_benchmark_meta' (dict)")
+    context.write_benchmark_meta = meta
+    logger.info(f"Loaded write benchmark context from {infile} (measurement={meta.get('measurement')})")
+
 
 
 # ---------- Datatype ----------

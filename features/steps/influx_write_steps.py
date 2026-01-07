@@ -401,3 +401,28 @@ def step_store_write_result(context, outfile):
     logger.debug(json.dumps(result, indent=2))
 
     _export_write_result_to_main_influx(result, outfile, context)
+
+@then('I store the write benchmark context as "{outfile}"')
+def step_store_write_context(context: Context, outfile: str) -> None:
+    """
+    Stores the subset of data that follow-up scenarios (e.g., query/delete) may need,
+    without relying on in-memory `context` across scenarios.
+
+    Payload:
+      - write_benchmark_meta (includes measurement, total_points, etc.)
+      - created_at_epoch_s
+    """
+    meta: Dict[str, Any] = getattr(context, "write_benchmark_meta", None)
+    if not isinstance(meta, dict):
+        raise AssertionError("No write benchmark meta present on context.write_benchmark_meta")
+
+    payload: Dict[str, Any] = {
+        "write_benchmark_meta": meta,
+        "created_at_epoch_s": time.time(),
+    }
+
+    out_path = Path(outfile)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(f"storing write benchmark context: {out_path}")
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
