@@ -84,7 +84,7 @@ def build_delete_export_point(
         .field("points_before", int(summary.get("points_before", 0)))
         .field("points_after", int(summary.get("points_after", 0)))
         .field("deleted_points", int(summary.get("deleted_points", 0)))
-        .field("delete_latency_s", float(summary.get("delete_latency_s", 0.0)))
+        .field("latency_s", float(summary.get("latency_s", 0.0)))
         .field("ok", bool(summary.get("ok", False)))
         .field("status_code", int(summary.get("status_code", 0)))
     )
@@ -171,9 +171,10 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     stop = "2100-01-01T00:00:00Z"
     predicate = f'_measurement="{measurement}"'
 
-    t0 = time.perf_counter()
     ok = True
     status_code = 204
+    t0 = time.perf_counter()
+    logger.debug(f"t0 = {t0:.6f}s – starting delete for measurement={measurement}")
     try:
         delete_api.delete(start=start, stop=stop, predicate=predicate, bucket=bucket, org=org)
     except Exception as exc:
@@ -181,8 +182,9 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         ok = False
         status_code = 500
     t1 = time.perf_counter()
+    logger.debug(f"t1 = {t1:.6f}s – delete completed for measurement={measurement}")
     latency_s = t1 - t0
-
+    logger.debug("latency_s = " + str(latency_s))
     points_after = _count_points_for_measurement(context, measurement)
 
     metrics = DeleteRunMetrics(
@@ -202,7 +204,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         "expected_points": expected_points,
     }
     context.delete_summary = {
-        "delete_latency_s": latency_s,
+        "latency_s": latency_s,
         "points_before": points_before,
         "points_after": points_after,
         "deleted_points": points_before - points_after,
