@@ -18,7 +18,7 @@ from src.utils import (
     scenario_id_from_outfile,
     main_influx_is_configured,
     get_main_influx_write_api,
-    write_to_influx,
+    write_to_influx, generate_base_point,
 )
 
 logger = logging.getLogger("bddbench.influx_query_steps")
@@ -287,23 +287,21 @@ def build_query_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
+    context: Context
 ) -> Point:
     latency_stats = summary.get("latency_stats", {}) or {}
     bytes_stats = summary.get("bytes_stats", {}) or {}
     rows_stats = summary.get("rows_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
-
+    p = generate_base_point(context=context, measurement="bddbench_query_result")
     return (
-        Point("bddbench_query_result")
+        p
         .tag("measurement", str(meta.get("measurement", "")))
         .tag("time_range", str(meta.get("time_range", "")))
         .tag("query_type", str(meta.get("query_type", "")))
         .tag("result_size", str(meta.get("result_size", "")))
         .tag("output_format", str(meta.get("output_format", "")))
         .tag("compression", str(meta.get("compression", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("concurrent_clients", int(meta.get("concurrent_clients", 0)))
         .field("queries_count", int(summary.get("queries_count", 0)))
@@ -368,6 +366,7 @@ def _export_query_result_to_main_influx(
         meta=meta,
         summary=summary,
         scenario_id=scenario_id,
+        context=context
     )
 
     try:

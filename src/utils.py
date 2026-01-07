@@ -33,13 +33,13 @@ def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _get_sut_ssh_target() -> Optional[str]:
-    return os.getenv("SUT_SSH")
+    return  re.search(r"\d+\.\d+\.\d+\.\d+", os.getenv("INFLUXDB_SUT_URL")).group()
 
 
 def _run_on_sut(cmd: List[str]) -> subprocess.CompletedProcess[str]:
     target = _get_sut_ssh_target()
     if target:
-        ssh_cmd = ["ssh", target, "--", *cmd]
+        ssh_cmd = ["ssh", f'nixos@{target}', "--", *cmd]
         logger.debug("Running on SUT (%s): %s", target, " ".join(cmd))
         return _run(ssh_cmd)
     else:
@@ -109,6 +109,7 @@ def generate_base_point(context: Context, measurement: str) -> Point:
         .tag("sut_bucket", str(getattr(sut, "bucket", "")))
         .tag("sut_org", str(getattr(sut, "org", "")))
         .tag("sut_influx_url", str(getattr(sut, "url", "")))
+        .tag("sut_host", str(getattr(sut, "host", "")))
     )
 
 def influx_precision_from_str(p: str) -> WritePrecision:

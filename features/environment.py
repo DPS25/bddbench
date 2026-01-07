@@ -191,6 +191,11 @@ def _load_env(context: Context):
     logger.debug(f"SUT InfluxDB ORG: {context.influxdb.sut.org}")
     logger.debug(f"SUT InfluxDB BUCKET: {context.influxdb.sut.bucket}")
 
+
+
+    context.influxdb.sut.host = _run_on_sut(["hostname"]).stdout.strip()
+    logger.debug(f"SUT host identifier: {context.influxdb.sut.host}")
+
 def _setup_logging(context: Context):
     """
     Setup logging for behave tests, directing logs to a file and the systemd journal.
