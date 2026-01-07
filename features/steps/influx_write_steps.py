@@ -18,7 +18,7 @@ from src.utils import (
     scenario_id_from_outfile,
     main_influx_is_configured,
     get_main_influx_write_api,
-    write_to_influx,
+    write_to_influx, generate_base_point,
 )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -47,20 +47,18 @@ def build_write_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
+    context: Context,
 ) -> Point:
     latency_stats = summary.get("latency_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
-
+    p = generate_base_point(context=context, measurement="bddbench_write_result")
     return (
-        Point("bddbench_write_result")
+        p
         .tag("source_measurement", str(meta.get("measurement", "")))
         .tag("compression", str(meta.get("compression", "")))
         .tag("precision", str(meta.get("precision", "")))
         .tag("point_complexity", str(meta.get("point_complexity", "")))
         .tag("time_ordering", str(meta.get("time_ordering", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("total_points", int(meta.get("total_points", 0)))
         .field("total_batches", int(meta.get("total_batches", 0)))
@@ -104,7 +102,7 @@ def _export_write_result_to_main_influx(
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("write-",))
 
     # >>> hier kommt jetzt der Utils-Helper zum Einsatz <<<
-    p = build_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
+    p = build_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id, context=context)
 
     try:
         write_to_influx(

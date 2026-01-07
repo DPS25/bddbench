@@ -14,7 +14,7 @@ from src.utils import (
     scenario_id_from_outfile,
     main_influx_is_configured,
     get_main_influx_write_api,
-    write_to_influx,
+    write_to_influx, generate_base_point,
 )
 
 logger = logging.getLogger("bddbench.influx_delete_steps")
@@ -73,13 +73,13 @@ def build_delete_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
+    context: Context
 ) -> Point:
+
+    p = generate_base_point(context=context, measurement="bddbench_delete_result")
     return (
-        Point("bddbench_delete_result")
+        p
         .tag("measurement", str(meta.get("measurement", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("points_before", int(summary.get("points_before", 0)))
         .field("points_after", int(summary.get("points_after", 0)))
@@ -121,8 +121,8 @@ def _export_delete_result_to_main_influx(
         meta=meta,
         summary=summary,
         scenario_id=scenario_id,
+        context=context
     )
-
     try:
         write_api.write(bucket=main.bucket, org=main.org, record=p)
         logger.info(" Exported delete result to main Influx")

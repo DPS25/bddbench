@@ -15,6 +15,6 @@ Feature: InfluxDB v2 delete benchmark (/api/v2/delete)
 
         @normal
         Examples:
-            | id         | measurement       |
-            | smoke      | bddbench_singlewrite    |
-            | heavy_load | bddbench_singlewrite    |
+            | id    | measurement          |
+            | smoke | bddbench_singlewrite |
+            | load  | bddbench_singlewrite |

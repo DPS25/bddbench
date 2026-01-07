@@ -20,7 +20,7 @@ from src.utils import (
     scenario_id_from_outfile,
     main_influx_is_configured,
     get_main_influx_write_api,
-    write_to_influx,
+    write_to_influx, generate_base_point,
 )
 
 logger = logging.getLogger("bddbench.influx_multi_bucket_steps")
@@ -42,20 +42,19 @@ def build_multi_write_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
+    context: Context
 ) -> Point:
     latency_stats = summary.get("latency_stats", {}) or {}
     throughput = summary.get("throughput", {}) or {}
-
+    p = generate_base_point(context=context, measurement="bddbench_multi_write_result")
     return (
-        Point("bddbench_multi_write_result")
+        p
         .tag("source_measurement", str(meta.get("measurement", "")))
         .tag("compression", str(meta.get("compression", "")))
         .tag("precision", str(meta.get("precision", "")))
         .tag("point_complexity", str(meta.get("point_complexity", "")))
         .tag("time_ordering", str(meta.get("time_ordering", "")))
         .tag("sut_bucket_prefix", str(meta.get("bucket_prefix", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("bucket_count", int(meta.get("bucket_count", 0)))
         .field("total_points", int(meta.get("total_points", 0)))
@@ -103,7 +102,7 @@ def _export_multi_write_result_to_main_influx(
     summary = result.get("summary", {})
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("multi-write-",))
 
-    p = build_multi_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
+    p = build_multi_write_export_point(meta=meta, summary=summary, scenario_id=scenario_id, context=context)
 
     try:
         write_to_influx(
