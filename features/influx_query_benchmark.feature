@@ -14,6 +14,6 @@ Feature: InfluxDB v2 query benchmark (/api/v2/query)
 
     @normal
     Examples:
-      | id    | measurement      | time_range | query_type | result_size | concurrent_clients | output_format | compression |
-      | smoke | bddbench_generic | 10s        | filter     | small       | 1                  | csv           | none        |
-      | load  | bddbench_generic | 1h         | aggregate  | large       | 5                  | csv           | gzip        |
+      | id    | measurement     | time_range | query_type | result_size | concurrent_clients | output_format | compression |
+      | smoke | bddbench_single | 10s        | filter     | small       | 1                  | csv           | none        |
+      | load  | bddbench_single | 1h         | aggregate  | large       | 5                  | csv           | gzip        |
