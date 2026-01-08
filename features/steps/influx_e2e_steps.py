@@ -463,6 +463,8 @@ def build_e2e_export_point(meta: Dict[str, Any], summary: Dict[str, Any], scenar
 
     return (
         Point("bddbench_e2e_result")
+        .tag("mode", str(meta.get("mode", "")))      
+        .tag("group", str(meta.get("group", "")))   
         .tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
         .tag("base_measurement", str(meta.get("base_measurement", "")))
         .tag("measurement", str(meta.get("measurement", "")))
@@ -562,6 +564,9 @@ def step_run_e2e(
 
     run_id = getattr(context, "run_id", None)
     run_suffix = str(run_id) if run_id else "run"
+    tags = set(getattr(context, "tags", []) or [])
+    mode = "experimental" if "experimental" in tags else "normal"
+    group = "multibucket" if "multibucket" in tags else "singlebucket"
 
     bucket_names = [f"{bucket_prefix}_{run_suffix}_{i}" for i in range(bucket_count)]
     measurement_name = f"{measurement}_{run_suffix}"
@@ -714,6 +719,8 @@ def step_run_e2e(
 
     context.e2e_meta = {
         "run_id": run_id,
+        "mode": mode,             
+        "group": group,
         "bucket_prefix": bucket_prefix,
         "bucket_count": bucket_count,
         "buckets": bucket_names,
@@ -744,6 +751,8 @@ def step_run_e2e(
 
     context.e2e_summary = {"ok": ok, "write": write_summary, "query": query_summary, "delete": delete_summary}
     context.e2e_details = {
+        "mode": mode,
+        "group": group,
         "write_batches": [asdict(b) for b in write_batches],
         "query_runs": [asdict(r) for r in query_runs],
         "delete_runs": [asdict(d) for d in delete_runs],
