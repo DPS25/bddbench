@@ -9,6 +9,7 @@ Feature: InfluxDB v2 delete benchmark (/api/v2/delete)
         And the target bucket from the SUT config is available
 
     Scenario Outline: generic delete benchmark run for a measurement
+        Given I load the write benchmark context from "<write_context_file>"
         When I delete all points for measurement "<measurement>" in the SUT bucket
         Then the delete duration shall be <= <max_delete_ms> ms
         And no points for measurement "<measurement>" shall remain in the SUT bucket
@@ -16,6 +17,6 @@ Feature: InfluxDB v2 delete benchmark (/api/v2/delete)
 
         @normal
         Examples:
-            | id         | measurement          | max_delete_ms |
-            | smoke      | bddbench_write_poc   | 500           |
-            | heavy_load | bddbench_write_load  | 2000          |
+            | id         | measurement          | max_delete_ms | write_context_file                    |
+            | smoke      | bddbench_write_poc   | 500           | reports/write-context-smoke.json      |
+            | heavy_load | bddbench_write_load  | 2000          | reports/write-context-heavy_load.json |
