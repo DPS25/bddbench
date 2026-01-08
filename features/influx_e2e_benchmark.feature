@@ -4,7 +4,8 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
 
   Background:
     Given a SUT InfluxDB v2 endpoint is configured and reachable
-
+    
+  @singlebucket 
   Scenario Outline: single bucket WQD E2E (normal) - <profile>
     When I run an end-to-end benchmark with bucket prefix "<bucket_prefix>" on base measurement "<measurement>" with <bucket_count> buckets, write batch size <batch_size>, <parallel_writers> parallel writers, write compression "<write_compression>", timestamp precision "<precision>", point complexity "<point_complexity>", tag cardinality <tag_cardinality> and time ordering "<time_ordering>" for <batches> batches, expecting <expected_points_per_bucket> points per bucket and <expected_total_points> total points, then query with time range "<time_range>", query type "<query_type>", result size "<result_size>", <concurrent_clients> concurrent clients, <query_repeats> repeats per client, output format "<output_format>" and query compression "<query_compression>", and finally delete all written points
     Then I store the end-to-end benchmark result as "reports/e2e-<id>.json"
@@ -12,7 +13,7 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
     # ==========================================================
     # SINGLE BUCKET WQD - NORMAL
     # ==========================================================
-    @singlebucket @normal
+    @normal
     Examples:
       | id         | profile     | bucket_prefix | measurement  | bucket_count | batch_size | parallel_writers | batches | expected_points_per_bucket | expected_total_points | write_compression | precision | point_complexity | tag_cardinality | time_ordering | time_range | query_type | result_size | concurrent_clients | query_repeats | output_format | query_compression |
       | sb_smoke   | smoke       | bddbench_e2e  | bddbench_e2e | 1            | 100        | 1                | 10      | 1000                       | 1000                  | none              | ns        | low              | 10              | in_order      | 10s        | filter     | small       | 1                  | 1             | csv           | none              |
@@ -25,7 +26,7 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
     # ==========================================================
     # SINGLE BUCKET WQD - EXPERIMENTAL 
     # ==========================================================
-    @singlebucket @experimental
+    @experimental
     Examples:
       | id          | profile     | bucket_prefix | measurement  | bucket_count | batch_size | parallel_writers | batches | expected_points_per_bucket | expected_total_points | write_compression | precision | point_complexity | tag_cardinality | time_ordering  | time_range | query_type | result_size | concurrent_clients | query_repeats | output_format | query_compression |
       | sbx_smoke   | smoke       | bddbench_e2e  | bddbench_e2e | 1            | 200        | 1                | 5       | 1000                       | 1000                  | none              | ms        | low              | 10              | out_of_order   | 1h         | group_by   | small       | 1                  | 1             | csv           | none              |
@@ -35,6 +36,7 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
       | sbx_break   | breakpoint  | bddbench_e2e  | bddbench_e2e | 1            | 5000       | 4                | 10      | 200000                     | 200000                | gzip              | ns        | high             | 5000            | out_of_order   | 1h         | pivot      | large       | 12                 | 1             | csv           | gzip              |
       | sbx_soak    | soak        | bddbench_e2e  | bddbench_e2e | 1            | 300        | 1                | 400     | 120000                     | 120000                | none              | ms        | low              | 500             | out_of_order   | 72h        | filter     | small       | 2                  | 4             | csv           | none              |
 
+  @multibucket 
   Scenario Outline: multi bucket WQD E2E (normal) - <profile>
     When I run an end-to-end benchmark with bucket prefix "<bucket_prefix>" on base measurement "<measurement>" with <bucket_count> buckets, write batch size <batch_size>, <parallel_writers> parallel writers, write compression "<write_compression>", timestamp precision "<precision>", point complexity "<point_complexity>", tag cardinality <tag_cardinality> and time ordering "<time_ordering>" for <batches> batches, expecting <expected_points_per_bucket> points per bucket and <expected_total_points> total points, then query with time range "<time_range>", query type "<query_type>", result size "<result_size>", <concurrent_clients> concurrent clients, <query_repeats> repeats per client, output format "<output_format>" and query compression "<query_compression>", and finally delete all written points
     Then I store the end-to-end benchmark result as "reports/e2e-<id>.json"
@@ -42,7 +44,7 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
     # ==========================================================
     # MULTI BUCKET WQD - NORMAL
     # ==========================================================
-    @multibucket @normal
+    @normal
     Examples:
       | id         | profile     | bucket_prefix | measurement  | bucket_count | batch_size | parallel_writers | batches | expected_points_per_bucket | expected_total_points | write_compression | precision | point_complexity | tag_cardinality | time_ordering | time_range | query_type | result_size | concurrent_clients | query_repeats | output_format | query_compression |
       | mb_smoke   | smoke       | bddbench_e2e  | bddbench_e2e | 3            | 100        | 1                | 10      | 1000                       | 3000                  | none              | ns        | low              | 10              | in_order      | 1h         | filter     | small       | 1                  | 1             | csv           | none              |
@@ -55,7 +57,7 @@ Feature: InfluxDB v2 end-to-end benchmark (bucket create -> write -> query -> de
     # ==========================================================
     # MULTI BUCKET WQD - EXPERIMENTAL
     # ==========================================================
-    @multibucket @experimental
+    @experimental
     Examples:
       | id           | profile     | bucket_prefix | measurement  | bucket_count | batch_size | parallel_writers | batches | expected_points_per_bucket | expected_total_points | write_compression | precision | point_complexity | tag_cardinality | time_ordering | time_range | query_type | result_size | concurrent_clients | query_repeats | output_format | query_compression |
       | mbx_smoke    | smoke       | bddbench_e2e  | bddbench_e2e | 4            | 200        | 1                | 5       | 1000                       | 4000                  | none              | ms        | low              | 10              | out_of_order  | 1h         | group_by   | small       | 1                  | 1             | csv           | none              |
