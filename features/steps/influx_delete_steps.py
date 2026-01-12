@@ -1,7 +1,9 @@
+import json
 import logging
 import os
 import time
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Dict, Any
 
 from behave import given, when, then
@@ -14,7 +16,7 @@ from src.utils import (
     scenario_id_from_outfile,
     main_influx_is_configured,
     get_main_influx_write_api,
-    write_to_influx,
+    write_to_influx, generate_base_point,
 )
 
 logger = logging.getLogger("bddbench.influx_delete_steps")
@@ -99,18 +101,18 @@ def build_delete_export_point(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
     scenario_id: str,
+    context: Context
 ) -> Point:
+
+    p = generate_base_point(context=context, measurement="bddbench_delete_result")
     return (
-        Point("bddbench_delete_result")
+        p
         .tag("measurement", str(meta.get("measurement", "")))
-        .tag("sut_bucket", str(meta.get("bucket", "")))
-        .tag("sut_org", str(meta.get("org", "")))
-        .tag("sut_influx_url", str(meta.get("sut_url", "")))
         .tag("scenario_id", scenario_id or "")
         .field("points_before", int(summary.get("points_before", 0)))
         .field("points_after", int(summary.get("points_after", 0)))
         .field("deleted_points", int(summary.get("deleted_points", 0)))
-        .field("delete_latency_s", float(summary.get("delete_latency_s", 0.0)))
+        .field("latency_s", float(summary.get("latency_s", 0.0)))
         .field("ok", bool(summary.get("ok", False)))
         .field("status_code", int(summary.get("status_code", 0)))
     )
@@ -147,8 +149,8 @@ def _export_delete_result_to_main_influx(
         meta=meta,
         summary=summary,
         scenario_id=scenario_id,
+        context=context
     )
-
     try:
         write_api.write(bucket=main.bucket, org=main.org, record=p)
         logger.info(" Exported delete result to main Influx")
@@ -197,9 +199,10 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
     stop = "2100-01-01T00:00:00Z"
     predicate = f'_measurement="{measurement}"'
 
-    t0 = time.perf_counter()
     ok = True
     status_code = 204
+    t0 = time.perf_counter()
+    logger.debug(f"t0 = {t0:.6f}s – starting delete for measurement={measurement}")
     try:
         delete_api.delete(start=start, stop=stop, predicate=predicate, bucket=bucket, org=org)
     except Exception as exc:
@@ -207,8 +210,9 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         ok = False
         status_code = 500
     t1 = time.perf_counter()
+    logger.debug(f"t1 = {t1:.6f}s – delete completed for measurement={measurement}")
     latency_s = t1 - t0
-
+    logger.debug("latency_s = " + str(latency_s))
     points_after = _count_points_for_measurement(context, measurement)
 
     metrics = DeleteRunMetrics(
@@ -228,7 +232,7 @@ def step_delete_measurement(context: Context, measurement: str) -> None:
         "expected_points": expected_points,
     }
     context.delete_summary = {
-        "delete_latency_s": latency_s,
+        "latency_s": latency_s,
         "points_before": points_before,
         "points_after": points_after,
         "deleted_points": points_before - points_after,
