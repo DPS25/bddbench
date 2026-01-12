@@ -106,6 +106,8 @@ def generate_base_point(context: Context, measurement: str) -> Point:
     sut = context.influxdb.sut
     return (
         Point(measurement)
+        .tag("sut_version", str(getattr(sut, "version", "")))
+        .tag("sut_commit", str(getattr(sut, "commit", "")))
         .tag("sut_bucket", str(getattr(sut, "bucket", "")))
         .tag("sut_org", str(getattr(sut, "org", "")))
         .tag("sut_influx_url", str(getattr(sut, "url", "")))

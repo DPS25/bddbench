@@ -194,6 +194,11 @@ def _load_env(context: Context):
 
 
     context.influxdb.sut.host = _run_on_sut(["hostname"]).stdout.strip()
+    health = context.influxdb.sut.client.health()
+    context.influxdb.sut.commit = health.commit
+    context.influxdb.sut.version = health.version
+    logger.debug(f"SUT InfluxDB commit: {context.influxdb.sut.commit}")
+    logger.debug(f"SUT InfluxDB version: {context.influxdb.sut.version}")
     logger.debug(f"SUT host identifier: {context.influxdb.sut.host}")
 
 def _setup_logging(context: Context):
