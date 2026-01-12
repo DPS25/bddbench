@@ -16,6 +16,6 @@ Feature: InfluxDB v2 delete benchmark (/api/v2/delete)
 
         @normal
         Examples:
-            | id         | measurement          |  write_context_file                    |
-            | smoke      | bddbench_single_delete   | reports/write-context-smoke.json      |
-            | heavy_load | bddbench_single_delete  |  reports/write-context-heavy_load.json |
+            | id    | measurement          |  write_context_file                    |
+            | smoke | bddbench_single_delete   | reports/write-context-smoke.json      |
+            | load  | bddbench_single_delete  |  reports/write-context-load.json |
