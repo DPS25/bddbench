@@ -9,7 +9,6 @@ Feature: CPU benchmark (sysbench)
     When I run a sysbench cpu benchmark with max prime <max_prime>, threads <threads> and time limit <time_limit_s> seconds
     Then I store the cpu benchmark result as "<report_path>"
 
-    @normal
     Examples:
       | max_prime | threads | time_limit_s | report_path                        |
       | 20000     | 1       | 20           | reports/cpu-maxprime-20000-t1.json |
