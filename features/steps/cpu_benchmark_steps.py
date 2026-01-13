@@ -120,4 +120,5 @@ def step_store_cpu_result(context, report_path: str):
         report_path=report_path,
         context_attr="cpu_benchmark",
         bench_type="cpu",
+        measurement="bddbench_cpu_result"
     )

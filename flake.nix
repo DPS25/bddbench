@@ -48,6 +48,15 @@
             behave -t="query and normal"  -f progress3 --no-skipped --no-snippets --no-summary
             behave -t="delete and normal" -f progress3 --no-skipped --no-snippets --no-summary
           '')
+
+          (pkgs.writeShellScriptBin "run-behave-host-benchmarks-5-times" ''
+            set -e
+            for i in {1..5}; do behave -t="memory" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
+            for i in {1..5}; do behave -t="storage" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
+            for i in {1..5}; do behave -t="cpu" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
+          '')
+
+
         ];
 
         env = {
