@@ -5,13 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from behave import given, when, then
+from behave import when, then
 
 from src.utils import (
     _run_on_sut, 
     _sut_host_identifier, 
     _size_to_bytes, 
-    write_json_report,
+    store_sut_benchmark_result,
 )
 
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
@@ -59,15 +59,6 @@ def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
 
     return result
 
-
-@given("sysbench is installed")
-def step_sysbench_installed(context):
-    try:
-        _run_on_sut(["sysbench", "--version"])
-    except Exception as e:
-        raise AssertionError("sysbench not found on SUT.Install sysbench there or add pkgs.sysbench to flake.nix") from e
-
-
 @when('I run a sysbench memory benchmark with mode "{mode}", access mode "{access_mode}", block size "{block_size}", total size "{total_size}", threads {threads:d} and time limit {time_limit_s:d} seconds')
 def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size, threads, time_limit_s):
     if mode not in ("read", "write"):
@@ -110,8 +101,9 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
 
 @then('I store the memory benchmark result as "{report_path}"')
 def step_store_memory_result(context, report_path):
-    data = getattr(context, "memory_benchmark", None)
-    if not data:
-        raise AssertionError("No memory benchmark found in context (did the When step run?)")
-
-    write_json_report(report_path,data)
+    store_sut_benchmark_result(
+        context,
+        report_path=report_path,
+        context_attr="memory_benchmark",
+        bench_type="memory",
+    )
