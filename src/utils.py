@@ -32,10 +32,8 @@ def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
         )
     return p
 
-
 def _get_sut_ssh_target() -> Optional[str]:
     return  re.search(r"\d+\.\d+\.\d+\.\d+", os.getenv("INFLUXDB_SUT_URL")).group()
-
 
 def _run_on_sut(cmd: List[str]) -> subprocess.CompletedProcess[str]:
     target = _get_sut_ssh_target()
@@ -47,15 +45,7 @@ def _run_on_sut(cmd: List[str]) -> subprocess.CompletedProcess[str]:
         logger.debug("Running locally (no SUT_SSH): %s", " ".join(cmd))
         return _run(cmd)
 
-
-def _sut_host_identifier() -> str:
-    target = _get_sut_ssh_target()
-    if target:
-        return target
-    return platform.node()
-
 _SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMG]?)\s*$", re.IGNORECASE)
-
 
 def _size_to_bytes(value: str) -> int:
     m = _SIZE_RE.match(value)

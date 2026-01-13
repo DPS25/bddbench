@@ -9,7 +9,6 @@ from behave import when, then
 
 from src.utils import (
     _run_on_sut, 
-    _sut_host_identifier, 
     _size_to_bytes, 
     store_sut_benchmark_result,
 )
@@ -83,7 +82,7 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
 
     context.memory_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": _sut_host_identifier(),
+        "host": context.influxdb.sut.host,
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "mode": mode,

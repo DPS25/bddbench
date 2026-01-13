@@ -8,7 +8,6 @@ from typing import Any, Dict
 from behave import when, then
 from src.utils import (
     _run_on_sut, 
-    _sut_host_identifier,
     store_sut_benchmark_result,
 )
 
@@ -103,7 +102,7 @@ def step_run_sysbench_cpu(context, max_prime: int, threads: int, time_limit_s: i
 
     context.cpu_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": _sut_host_identifier(),
+        "host": context.influxdb.sut.host,
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "max_prime": max_prime,

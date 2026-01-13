@@ -10,7 +10,6 @@ from behave import given, when, then
 from src.utils import (
     _run_on_sut, 
     _size_to_bytes, 
-    _sut_host_identifier,
     store_sut_benchmark_result,
 )
 
@@ -178,7 +177,7 @@ def step_run_fio_storage_benchmark(
 
     context.storage_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": _sut_host_identifier,
+        "host": context.influxdb.sut.host,
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "profile": profile,
