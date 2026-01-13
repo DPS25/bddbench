@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from behave import when, then
 
 from src.utils import (
-    _run_on_sut, 
+    _run_on_sut,
     _size_to_bytes, 
     store_sut_benchmark_result,
 )

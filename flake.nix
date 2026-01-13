@@ -46,7 +46,19 @@
             behave -t="write and normal and singlebucket"  -f progress3 --no-skipped --no-snippets --no-summary
             behave -t="write and normal and multibucket"  -f progress3 --no-skipped --no-snippets --no-summary
             behave -t="query and normal"  -f progress3 --no-skipped --no-snippets --no-summary
-            behave -t="delete and normal" -f progress3 --no-skipped --no-snippets --no-summary
+            behave -t="delete" -f progress3 --no-skipped --no-snippets --no-summary
+          '')
+
+          (pkgs.writeShellScriptBin "run-behave-normal-5-times" ''
+          set -e
+          for i in {1..5}; do run-behave-normal; sleep 1; done
+          '')
+
+
+          (pkgs.writeShellScriptBin "run-everything-5-times" ''
+          set -e
+          run-behave-host-benchmarks-5-times
+          run-behave-normal-5-times
           '')
 
           (pkgs.writeShellScriptBin "run-behave-host-benchmarks-5-times" ''
