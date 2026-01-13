@@ -105,4 +105,5 @@ def step_store_memory_result(context, report_path):
         report_path=report_path,
         context_attr="memory_benchmark",
         bench_type="memory",
+        measurement="bddbench_memory_result"
     )

@@ -204,4 +204,5 @@ def step_store_storage_result(context, report_path):
         report_path=report_path,
         context_attr="storage_benchmark",
         bench_type="storage",
+        measurement="bddbench_storage_result"
     )
