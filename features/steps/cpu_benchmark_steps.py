@@ -5,11 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from behave import given, when, then
+from behave import when, then
 from src.utils import (
     _run_on_sut, 
-    _sut_host_identifier,
-    write_json_report,
+    store_sut_benchmark_result,
 )
 
 def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
@@ -83,17 +82,6 @@ def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
 
     return result
 
-
-@given("sysbench is installed")
-def step_sysbench_installed(context):
-    try:
-        _run_on_sut(["sysbench", "--version"])
-    except Exception as e:
-        raise AssertionError(
-            "sysbench not found on SUT. Install sysbench there or add pkgs.sysbench to flake.nix"
-        ) from e
-
-
 @when(
     "I run a sysbench cpu benchmark with max prime {max_prime:d}, "
     "threads {threads:d} and time limit {time_limit_s:d} seconds"
@@ -114,7 +102,7 @@ def step_run_sysbench_cpu(context, max_prime: int, threads: int, time_limit_s: i
 
     context.cpu_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "host": _sut_host_identifier(),
+        "host": context.influxdb.sut.host,
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "max_prime": max_prime,
@@ -127,8 +115,9 @@ def step_run_sysbench_cpu(context, max_prime: int, threads: int, time_limit_s: i
 
 @then('I store the cpu benchmark result as "{report_path}"')
 def step_store_cpu_result(context, report_path: str):
-    data = getattr(context, "cpu_benchmark", None)
-    if not data:
-        raise AssertionError("No cpu benchmark found in context (did the When step run?)")
-
-    write_json_report(report_path,data)
+    store_sut_benchmark_result(
+        context,
+        report_path=report_path,
+        context_attr="cpu_benchmark",
+        bench_type="cpu",
+    )
