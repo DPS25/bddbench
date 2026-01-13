@@ -9,6 +9,7 @@ from behave import given, when, then
 from src.utils import (
     _run_on_sut, 
     _sut_host_identifier,
+    write_json_report,
 )
 
 def _parse_sysbench_cpu(output: str) -> Dict[str, Any]:
@@ -130,6 +131,4 @@ def step_store_cpu_result(context, report_path: str):
     if not data:
         raise AssertionError("No cpu benchmark found in context (did the When step run?)")
 
-    path = Path(report_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_report(report_path,data)
