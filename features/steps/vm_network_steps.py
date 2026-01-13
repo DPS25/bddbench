@@ -71,15 +71,25 @@ def _pick_target_ssh_host(peer_host: str) -> str:
     if ssh_override:
         return ssh_override
 
+    ssh_user = (os.getenv("BDD_NET_SSH_USER") or "nixos").strip() or "nixos"
+
+    use_sut_ssh_as_is = (os.getenv("BDD_NET_USE_SUT_SSH_AS_IS") or "").strip().lower() in ("1", "true", "yes")
+
     sut_ssh = (os.getenv("SUT_SSH") or "").strip()
     if sut_ssh:
-        return sut_ssh
+        if use_sut_ssh_as_is:
+            return sut_ssh
+        sut_host = sut_ssh.split("@")[-1].strip()
+        if sut_host:
+            return f"{ssh_user}@{sut_host}"
 
     h = (peer_host or "").strip()
     if "@" in h:
-        return h
-
-    ssh_user = (os.getenv("BDD_NET_SSH_USER") or "nixos").strip() or "nixos"
+        if use_sut_ssh_as_is:
+            return h
+        host_part = h.split("@")[-1].strip()
+        return f"{ssh_user}@{host_part}"
+        
     return f"{ssh_user}@{h}"
 
 # ----------------------------
@@ -128,17 +138,26 @@ def _ssh_run(host: str, remote_cmd: str, timeout_s: int = 60) -> subprocess.Comp
     Run a remote command via SSH.
     Use BatchMode/ConnectTimeout to avoid hanging forever.
     """
+
+    connect_timeout = (os.getenv("BDD_NET_SSH_CONNECT_TIMEOUT_S") or "6").strip()
+    extra_opts = (os.getenv("BDD_NET_SSH_OPTS") or "").strip()
+    ssh_cmd = [
+        "ssh",
+        "-o", "BatchMode=yes",
+        "-o", f"ConnectTimeout={connect_timeout}",
+        "-o", "StrictHostKeyChecking=accept-new",
+    ]
+    if extra_opts:
+        ssh_cmd += shlex.split(extra_opts)
+    ssh_cmd += [
+        host,
+        "bash",
+        "-lc",
+        remote_cmd,
+    ]
+    
     return subprocess.run(
-        [
-            "ssh",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=6",
-            "-o", "StrictHostKeyChecking=accept-new",
-            host,
-            "bash",
-            "-lc",
-            remote_cmd,
-        ],
+        ssh_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -247,17 +266,19 @@ def _start_remote_iperf3_server_oneoff(target_host: str, port: int) -> Dict[str,
         f" || "
         f"(echo 'iperf3 not available on target and nix not found' >&2; exit 1); "
         f"sleep 0.25; "
-        f"ss -lntp | grep -E ':{port}\\b' || true"
+        f"ss -lntp | grep -E ':{port}\\b'"
     )
     try:
         proc = _ssh_run(target_host, script, timeout_s=25)
-        ok = (proc.returncode == 0) and (f":{port}" in (proc.stdout + proc.stderr))
+        combined = (proc.stdout or "") + (proc.stderr or "")
+        ok = (proc.returncode == 0) and (f":{port}" in combined)
         return {
             "ok": ok,
             "rc": proc.returncode,
             "stdout": (proc.stdout or "").strip(),
             "stderr": (proc.stderr or "").strip(),
             "log_path": log_path,
+            "ssh_target": target_host,
         }
     except Exception as exc:
         return {
@@ -266,6 +287,7 @@ def _start_remote_iperf3_server_oneoff(target_host: str, port: int) -> Dict[str,
             "stdout": "",
             "stderr": repr(exc),
             "log_path": log_path,
+            "ssh_target": target_host,
         }
 
 # ----------------------------
@@ -511,32 +533,40 @@ def step_run_iperf3_benchmark(context, protocol, target_host, parallel_streams, 
     try:
         if direction == "runner->target":
             server_info = _start_remote_iperf3_server_oneoff(target_host=peer_ssh, port=iperf_port)
-
-            raw, err, meta_extra = _run_iperf3_client_local(
-                server_ip=peer_ip,
-                port=iperf_port,
-                protocol=protocol,
-                duration_s=duration_s,
-                parallel_streams=parallel_streams,
-                udp_bitrate=udp_bitrate,
-                connect_timeout_ms=connect_timeout_ms,
-            )
+            if not server_info.get("ok"):
+                err = f"iperf3 server start failed on {peer_ssh}: {(server_info.get('stderr') or server_info)}"
+                raw = None
+                meta_extra = {"skipped_client": True}
+                context.failed = True
+            else:
+                raw, err, meta_extra = _run_iperf3_client_local(
+                    server_ip=peer_ip,
+                    port=iperf_port,
+                    protocol=protocol,
+                    duration_s=duration_s,
+                    parallel_streams=parallel_streams,
+                    udp_bitrate=udp_bitrate,
+                    connect_timeout_ms=connect_timeout_ms,
+                )
 
         else:
             server_info = _start_local_iperf3_server(port=iperf_port)
             if not server_info.get("ok"):
-                raise AssertionError(f"Failed to start local iperf3 server: {server_info}")
-
-            raw, err, meta_extra = _run_iperf3_client_remote_via_ssh(
-                client_host=peer_ssh,
-                server_ip=runner_ip,
-                port=iperf_port,
-                protocol=protocol,
-                duration_s=duration_s,
-                parallel_streams=parallel_streams,
-                udp_bitrate=udp_bitrate,
-                connect_timeout_ms=connect_timeout_ms,
-            )
+                err = f"Failed to start local iperf3 server: {server_info}"
+                raw = None
+                meta_extra = {"skipped_client": True}
+                context.failed = True
+            else:
+                raw, err, meta_extra = _run_iperf3_client_remote_via_ssh(
+                    client_host=peer_ssh,
+                    server_ip=runner_ip,
+                    port=iperf_port,
+                    protocol=protocol,
+                    duration_s=duration_s,
+                    parallel_streams=parallel_streams,
+                    udp_bitrate=udp_bitrate,
+                    connect_timeout_ms=connect_timeout_ms,
+                )
 
     finally:
         if direction == "target->runner":
