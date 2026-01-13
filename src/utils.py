@@ -103,16 +103,21 @@ def write_to_influx(
 
 
 def generate_base_point(context: Context, measurement: str) -> Point:
+    point = Point(measurement)
+    return add_tags(context, point, {})
+
+
+def add_tags(context: Context, point: Point, extra_tags: Dict[str, str]) -> Point:
     sut = context.influxdb.sut
-    return (
-        Point(measurement)
-        .tag("sut_version", str(getattr(sut, "version", "")))
-        .tag("sut_commit", str(getattr(sut, "commit", "")))
-        .tag("sut_bucket", str(getattr(sut, "bucket", "")))
-        .tag("sut_org", str(getattr(sut, "org", "")))
-        .tag("sut_influx_url", str(getattr(sut, "url", "")))
-        .tag("sut_host", str(getattr(sut, "host", "")))
-    )
+    (point.tag("sut_version", str(getattr(sut, "version", "")))
+     .tag("sut_commit", str(getattr(sut, "commit", "")))
+     .tag("sut_bucket", str(getattr(sut, "bucket", "")))
+     .tag("sut_org", str(getattr(sut, "org", "")))
+     .tag("sut_influx_url", str(getattr(sut, "url", "")))
+     .tag("sut_host", str(getattr(sut, "host", ""))))
+    for k, v in extra_tags.items():
+        point = point.tag(k, v)
+    return point
 
 def influx_precision_from_str(p: str) -> WritePrecision:
     """
