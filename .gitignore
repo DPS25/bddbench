@@ -227,3 +227,6 @@ gherkin-poc/*.output
 # local only
 runner/
 scripts/
+
+# behave runner output
+runner
