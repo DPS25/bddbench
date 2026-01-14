@@ -1,22 +1,48 @@
-import logging, os, uuid
-from types import SimpleNamespace
-from dotenv import load_dotenv
+import sys
 from pathlib import Path
+
+# ----------------------------------------------------------------------
+# Bootstrap: ensure repo root is importable so `import src.*` works
+# (Fixes: ModuleNotFoundError: No module named 'src.utils')
+# ----------------------------------------------------------------------
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # repo root (features/..)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+# If another installed package named "src" shadows our local one, drop it.
+if "src" in sys.modules:
+    _m = sys.modules.get("src")
+    _m_file = getattr(_m, "__file__", None) or ""
+    _m_paths = [str(p) for p in getattr(_m, "__path__", [])] if hasattr(_m, "__path__") else []
+    _is_ours = (str(_REPO_ROOT) in _m_file) or any(str(_REPO_ROOT) in p for p in _m_paths)
+    if not _is_ours:
+        del sys.modules["src"]
+# ----------------------------------------------------------------------
+
+import logging
+import os
+import uuid
+from types import SimpleNamespace
+
+from dotenv import load_dotenv
 from influxdb_client.rest import ApiException
 
 from behave.model import Feature, Scenario, Step
-from influxdb_client.client.write_api import SYNCHRONOUS
 from behave.runner import Context
-from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client import InfluxDBClient
+
 from src.utils import _run_on_sut
 from src.formatter.AnsiColorFormatter import AnsiColorFormatter
 
 logger = logging.getLogger("bddbench.environment")
 
+
 def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "y", "on")
-    
+
+
 def _env_strip(name: str, default: str | None = None) -> str | None:
     v = os.getenv(name, default)
     if v is None:
@@ -24,16 +50,17 @@ def _env_strip(name: str, default: str | None = None) -> str | None:
     v = str(v).strip()
     return v if v != "" else None
 
-def _should_stress_step(step) -> bool:
+
+def _should_stress_step(step: Step | None) -> bool:
     if step is None:
         return False
     if step.keyword.strip().lower() != "when":
         return False
-
     name = (step.name or "").lower()
     return ("benchmark" in name) and ("i run" in name)
 
-def _load_dotenv_files():
+
+def _load_dotenv_files() -> None:
     """
     Load dotenv files (repo defaults + generated/secret env) into process env.
     This must NOT require any Influx settings.
@@ -41,53 +68,40 @@ def _load_dotenv_files():
     load_dotenv(dotenv_path=Path(".env"), override=False)
     load_dotenv(dotenv_path=Path(".env.generated"), override=False)
 
+
 def _validate_influx_auth(client: InfluxDBClient, label: str) -> None:
-    """
-    Validate that token/org actually works (not just ping).
-    We call an auth-protected endpoint. If token is wrong for this URL/org,
-    Influx returns 401.
-    """
     try:
-        # Buckets listing is auth protected; enough to prove token works.
         _ = client.buckets_api().find_buckets()
     except ApiException as exc:
-        # Provide a clean, actionable message
         raise AssertionError(
             f"{label} Influx auth failed: HTTP {exc.status} {exc.reason}. "
             f"Most likely token/org/url mismatch or token has insufficient permissions."
         ) from exc
     except Exception as exc:
-        raise AssertionError(
-            f"{label} Influx auth failed with unexpected error: {exc}"
-        ) from exc
+        raise AssertionError(f"{label} Influx auth failed with unexpected error: {exc}") from exc
+
 
 def _validate_bucket_exists(client: InfluxDBClient, bucket: str, label: str) -> None:
-    """
-    Optional: ensure the configured bucket exists. This prevents confusion later.
-    """
     try:
-        b = client.buckets_api().find_bucket_by_name(bucket_name=bucket)
+        try:
+            b = client.buckets_api().find_bucket_by_name(bucket_name=bucket)
+        except TypeError:
+            b = client.buckets_api().find_bucket_by_name(bucket)
     except Exception as exc:
         raise AssertionError(f"{label}: failed to lookup bucket '{bucket}': {exc}") from exc
+
     if b is None:
         raise AssertionError(f"{label}: configured bucket '{bucket}' does not exist.")
 
-def _load_env(context: Context):
-    """
-    Load environment variables into the context.
-    :param context:
-    :return:
-    """
 
-    # dotenv files are loaded in before_all(). Keep this function focused on Influx init.
-
+def _load_env(context: Context) -> None:
     context.influxdb = getattr(context, "influxdb", SimpleNamespace())
     context.influxdb.main = getattr(context.influxdb, "main", SimpleNamespace())
     context.influxdb.sut = getattr(context.influxdb, "sut", SimpleNamespace())
 
     context.influxdb.export_strict = _env_truthy("INFLUXDB_EXPORT_STRICT", "0")
 
-    # ----- main influx DB -----
+    # ----- MAIN influx DB -----
     require_main = _env_truthy("INFLUXDB_REQUIRE_MAIN", "0")
     skip_main = _env_truthy("INFLUXDB_SKIP_MAIN", "0")
 
@@ -95,7 +109,7 @@ def _load_env(context: Context):
     context.influxdb.main.token = _env_strip("INFLUXDB_MAIN_TOKEN", None)
     context.influxdb.main.org = _env_strip("INFLUXDB_MAIN_ORG", None)
     context.influxdb.main.bucket = _env_strip("INFLUXDB_MAIN_BUCKET", None)
-    
+
     main_cfg_complete = bool(
         (context.influxdb.main.url or "").strip()
         and (context.influxdb.main.token or "").strip()
@@ -105,11 +119,19 @@ def _load_env(context: Context):
 
     if skip_main:
         logger.info("INFLUXDB_SKIP_MAIN=1 -> skipping MAIN InfluxDB initialization")
+        context.influxdb.main.client = None
+        context.influxdb.main.write_api = None
+        context.influxdb.main.query_api = None
+
     elif not main_cfg_complete:
         msg = "MAIN InfluxDB is not fully configured (INFLUXDB_MAIN_*). Export to MAIN will be skipped."
         if require_main:
             raise AssertionError(msg + " (Set INFLUXDB_REQUIRE_MAIN=0 to allow running without MAIN.)")
         logger.warning(msg)
+        context.influxdb.main.client = None
+        context.influxdb.main.write_api = None
+        context.influxdb.main.query_api = None
+
     else:
         try:
             context.influxdb.main.client = InfluxDBClient(
@@ -122,19 +144,13 @@ def _load_env(context: Context):
                 raise AssertionError("Cannot reach MAIN InfluxDB endpoint (ping failed).")
 
             _validate_influx_auth(context.influxdb.main.client, label="MAIN")
+            _validate_bucket_exists(context.influxdb.main.client, bucket=context.influxdb.main.bucket, label="MAIN")
 
-            _validate_bucket_exists(
-                context.influxdb.main.client,
-                bucket=context.influxdb.main.bucket,
-                label="MAIN",
-            )
-            
-            context.influxdb.main.write_api = context.influxdb.main.client.write_api(
-                write_options=SYNCHRONOUS
-            )
+            context.influxdb.main.write_api = context.influxdb.main.client.write_api(write_options=SYNCHRONOUS)
             context.influxdb.main.query_api = context.influxdb.main.client.query_api()
 
             logger.info("successfully connected and authenticated to MAIN InfluxDB")
+
         except Exception as exc:
             if require_main:
                 raise
@@ -142,7 +158,7 @@ def _load_env(context: Context):
             context.influxdb.main.client = None
             context.influxdb.main.write_api = None
             context.influxdb.main.query_api = None
-        
+
     # ----- SUT influx DB -----
     context.influxdb.sut.url = _env_strip("INFLUXDB_SUT_URL", "http://localhost:8086")
     context.influxdb.sut.token = _env_strip("INFLUXDB_SUT_TOKEN", None)
@@ -150,85 +166,58 @@ def _load_env(context: Context):
     context.influxdb.sut.bucket = _env_strip("INFLUXDB_SUT_BUCKET", None)
 
     if context.influxdb.sut.url is None:
-        text = "INFLUXDB_SUT_URL environment variable must be set"
-        logger.error(text)
-        raise AssertionError(text)
+        raise AssertionError("INFLUXDB_SUT_URL environment variable must be set")
     if not (context.influxdb.sut.token or "").strip():
-        text = "INFLUXDB_SUT_TOKEN environment variable must be set"
-        logger.error(text)
-        raise AssertionError(text)
+        raise AssertionError("INFLUXDB_SUT_TOKEN environment variable must be set")
     if not (context.influxdb.sut.org or "").strip():
-        text = "INFLUXDB_SUT_ORG environment variable must be set"
-        logger.error(text)
-        raise AssertionError(text)
+        raise AssertionError("INFLUXDB_SUT_ORG environment variable must be set")
     if not (context.influxdb.sut.bucket or "").strip():
-        text = "INFLUXDB_SUT_BUCKET environment variable must be set"
-        logger.error(text)
-        raise AssertionError(text)
-
+        raise AssertionError("INFLUXDB_SUT_BUCKET environment variable must be set")
 
     context.influxdb.sut.client = InfluxDBClient(
         url=context.influxdb.sut.url,
         token=context.influxdb.sut.token,
         org=context.influxdb.sut.org,
     )
+
     if not context.influxdb.sut.client.ping():
         raise AssertionError("Cannot reach SUT InfluxDB endpoint (ping failed).")
+
     _validate_influx_auth(context.influxdb.sut.client, label="SUT")
-    _validate_bucket_exists(
-        context.influxdb.sut.client,
-        bucket=context.influxdb.sut.bucket,
-        label="SUT",
-    )
+    _validate_bucket_exists(context.influxdb.sut.client, bucket=context.influxdb.sut.bucket, label="SUT")
+
     logger.info("successfully connected and authenticated to SUT InfluxDB")
 
-    context.influxdb.sut.write_api = context.influxdb.sut.client.write_api(
-        write_options=SYNCHRONOUS
-    )
+    context.influxdb.sut.write_api = context.influxdb.sut.client.write_api(write_options=SYNCHRONOUS)
     context.influxdb.sut.query_api = context.influxdb.sut.client.query_api()
 
-    logger.debug(f"SUT InfluxDB URL: {context.influxdb.sut.url}")
-    logger.debug(f"SUT InfluxDB ORG: {context.influxdb.sut.org}")
-    logger.debug(f"SUT InfluxDB BUCKET: {context.influxdb.sut.bucket}")
 
-
-
-    context.influxdb.sut.host = _run_on_sut(["hostname"]).stdout.strip()
-    health = context.influxdb.sut.client.health()
-    context.influxdb.sut.commit = health.commit
-    context.influxdb.sut.version = health.version
-    logger.debug(f"SUT InfluxDB commit: {context.influxdb.sut.commit}")
-    logger.debug(f"SUT InfluxDB version: {context.influxdb.sut.version}")
-    logger.debug(f"SUT host identifier: {context.influxdb.sut.host}")
-
-def _setup_logging(context: Context):
-    """
-    Setup logging for behave tests, directing logs to a file and the systemd journal.
-    :param context:
-    :return:
-    """
+def _setup_logging(context: Context) -> None:
     root = logging.getLogger("bddbench")
     context.config.logging_level = context.config.logging_level or logging.DEBUG
-    context.config.logfile = (
-        context.config.userdata.get("logfile", None) or "reports/behave.log"
-    )
-    context.config.logdir = (
-        os.path.dirname(os.path.abspath(context.config.logfile)) or os.getcwd()
-    )
+    context.config.logfile = context.config.userdata.get("logfile", None) or "reports/behave.log"
+    context.config.logdir = os.path.dirname(os.path.abspath(context.config.logfile)) or os.getcwd()
+
     try:
         os.makedirs(context.config.logdir, exist_ok=True)
     except Exception:
-        # ignore creation errors (handlers will raise later if there's a real problem)
         pass
 
     root.setLevel(context.config.logging_level)
-    formatter = AnsiColorFormatter('%(asctime)s | %(name)s | %(levelname)8s | %(message)s')
+    formatter = AnsiColorFormatter("%(asctime)s | %(name)s | %(levelname)8s | %(message)s")
+
     file_handler = logging.FileHandler(context.config.logfile)
     file_handler.setLevel(context.config.logging_level)
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
-def _ensure_influx_initialized(context: Context):
+
+def _ensure_influx_initialized(context: Context) -> None:
+    # Network-only/local health checks: do NOT touch ANY Influx (MAIN/SUT).
+    if _env_truthy("BDD_DISABLE_INFLUX", "0"):
+        logger.info("BDD_DISABLE_INFLUX=1 -> skipping all InfluxDB initialization")
+        return
+
     if getattr(context, "influxdb", None) is None:
         _load_env(context)
         return
@@ -236,12 +225,8 @@ def _ensure_influx_initialized(context: Context):
         _load_env(context)
         return
 
+
 def run_stress_logic(context: Context, action: str, step: Step | None) -> None:
-    """
-    Start/stop stress-ng systemd presets on the SUT.
-    Uses SUT_SSH via src.utils._run_on_sut().
-    """
-    
     if step is not None and step.keyword != "When":
         return
 
@@ -266,7 +251,6 @@ def run_stress_logic(context: Context, action: str, step: Step | None) -> None:
         try:
             _run_on_sut(["sudo", "systemctl", action, unit])
         except Exception as exc:
-            # start must fail the run; stop should not block cleanup
             if action == "stop":
                 logger.warning("Failed to stop %s: %s", unit, exc)
             else:
@@ -275,70 +259,47 @@ def run_stress_logic(context: Context, action: str, step: Step | None) -> None:
     context._stress_active = (action == "start")
 
 
-def before_all(context: Context):
-    """
-    Setup logging before all tests.
-    :param context:
-    :return:
-    """
-    context.run_id = None
+# ---------------- behave hooks ----------------
+
+def before_all(context: Context) -> None:
+    # IMPORTANT: do NOT write context.run_id (behave warns/may cause exit=1 in your setup)
+    context.bdd_run_id = os.getenv("BDD_RUN_ID") or uuid.uuid4().hex
 
     _setup_logging(context)
     logger.info("------------------------------------------------")
     logger.info("Starting BDD tests...")
     _load_dotenv_files()
     _ensure_influx_initialized(context)
+
     context.stress = context.config.userdata.get("stress") == "true"
     context._stress_active = False
     context._stress_presets = (context.config.userdata.get("stress_presets") or "cpu4")
 
-def before_feature(context: Context, feature: Feature):
-    """
-    Log the start of a feature.
-    :param context:
-    :param feature:
-    :return:
-    """
+
+def before_feature(context: Context, feature: Feature) -> None:
     logger.debug(f"=== starting feature: {feature.name} ===")
 
-def after_feature(context: Context, feature: Feature):
-    """
-    Log the end of a feature.
-    :param context:
-    :param feature:
-    :return:
-    """
-    logger.debug(
-        f"=== finished feature: {feature.name} -> {feature.status.name} ==="
-    )
 
-def before_step(context: Context, step: Step):
+def after_feature(context: Context, feature: Feature) -> None:
+    logger.debug(f"=== finished feature: {feature.name} -> {feature.status.name} ===")
+
+
+def before_step(context: Context, step: Step) -> None:
     if context.stress and _should_stress_step(step):
         run_stress_logic(context, "start", step)
 
-def after_step(context: Context, step: Step):
+
+def after_step(context: Context, step: Step) -> None:
     if context.stress and _should_stress_step(step):
         run_stress_logic(context, "stop", step)
 
 
-def before_scenario(context: Context, scenario: Scenario):
-    """
-    Log the start of a scenario.
-    :param context:
-    :param scenario:
-    :return:
-    """
-    context.run_id = uuid.uuid4().hex
-    
+def before_scenario(context: Context, scenario: Scenario) -> None:
+    # Keep a stable run id for this behave run, but don’t touch context.run_id
+    context.bdd_run_id = getattr(context, "bdd_run_id", None) or uuid.uuid4().hex
     logger.debug(f"-- starting scenario: {scenario.name}")
 
-def after_scenario(context: Context, scenario: Scenario):
-    """
-    Log the end of a scenario.
-    :param context:
-    :param scenario:
-    :return:
-    """
-    logger.debug(
-        f"-- finished scenario: {scenario.name} -> {scenario.status.name}"
-    )
+
+def after_scenario(context: Context, scenario: Scenario) -> None:
+    logger.debug(f"-- finished scenario: {scenario.name} -> {scenario.status.name}")
+

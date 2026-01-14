@@ -609,9 +609,15 @@ def step_store_network_result(context, outfile):
     }
     # ---------------------------------------------
 
-    out_path = Path(outfile)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    repo_root = Path(context.config.base_dir).resolve()  # repo root
 
-    # DO NOT write to any InfluxDB. Only store local JSON report.
+    if repo_root.name == "features":
+        repo_root = repo_root.parent
+
+    out_path = Path(outfile)
+    if not out_path.is_absolute():
+        out_path = (repo_root / out_path).resolve()
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     logger.info("Stored network benchmark report: %s", str(out_path))
