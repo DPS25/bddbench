@@ -223,3 +223,7 @@ __marimo__/
 # vscode extension
 gherkin-poc/pretty.output
 gherkin-poc/*.output
+
+# local only
+runner/
+scripts/
