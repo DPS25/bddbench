@@ -26,7 +26,7 @@ Feature: InfluxDB v2 User API benchmark (/api/v2/me, /api/v2/users)
     @normal
     Examples:
       | id          | username_complexity | password_complexity | concurrent_clients | iterations |
-      | simple_crud | low                 | low                 | 1                  | 10         |
-      | heavy_crud  | high                | high                | 4                  | 50         |
+      | smoke | low                 | low                 | 1                  | 10         |
+      | load  | high                | high                | 4                  | 50         |
 
 
