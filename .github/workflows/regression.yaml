@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DPS25/nix
+          token: ${{ secrets.GH_PAT }}
           path: nix
 
       - name: Deploy Influx ${{ matrix.version }}
@@ -40,7 +41,7 @@ jobs:
         run: |
           ssh dsp25-benedikt "sudo rm -rf /var/lib/influxdb2/"
           nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
-            --target-host dsp25-benedikt --build-host localhost --sudo
+            --target-host dsp25-benedikt --build-host "" --sudo
 
       - name: Run benchmark and Generate Link
         working-directory: ./bddbench
