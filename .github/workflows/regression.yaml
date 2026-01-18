@@ -2,11 +2,14 @@ name: Regression Test
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   benchmarking:
-    runs-on: self-hosted
+    runs-on: dsp25-main-influx
     strategy:
+      fail-fast: false
       max-parallel: 1
       matrix:
         version: ["2.1.1", "2.4.0", "2.5.1", "2.7.6"]
@@ -21,33 +24,38 @@ jobs:
             flake_attr: "benedikt-influx2-7-6"
 
     steps:
-      - name: Checkout repos
+      - name: Checkout bddbench
         uses: actions/checkout@v4
-        with: { path: bddbench }
+        with:
+          path: bddbench
+
+      - name: Checkout nix
+        uses: actions/checkout@v4
+        with:
+          repository: DPS25/nix
+          path: nix
 
       - name: Deploy Influx ${{ matrix.version }}
+        working-directory: ./nix
         run: |
           ssh dsp25-benedikt "sudo rm -rf /var/lib/influxdb2/"
-          nixos-rebuild switch --flake .#${{ matrix.flake_attr }} --target-host dsp25-benedikt --sudo
+          nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
+            --target-host dsp25-benedikt --build-host localhost --sudo
 
       - name: Run benchmark and Generate Link
         working-directory: ./bddbench
         run: |
-          # 1. Capture Start Time (Unix milliseconds)
+          # Capture Start Time (Unix milliseconds)
           START_TIME=$(date +%s%3N)
           
-          # 2. Run the actual benchmark
           export ENV_NAME=benedikt_dsp25
           nix develop --command run-everything-5-times
           
-          # 3. Capture End Time
           END_TIME=$(date +%s%3N)
           
-          # 4. Construct the URL
           BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
           PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=\$__all&timezone=browser"
           FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
           
-          # 5. Post to GitHub Step Summary
-          echo "### Result for Influx ${{ matrix.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "[📊 View Grafana Dashboard for this Run]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "### Influx ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
+          echo "Test run complete. [Click here to view metrics in Grafana]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
