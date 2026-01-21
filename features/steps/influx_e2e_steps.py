@@ -420,8 +420,12 @@ def _delete_bucket_data(
     measurement: str,
     run_id: Optional[str],
 ) -> DeleteRunMetrics:
-    points_before = _count_points(query_api, org, bucket, measurement, run_id)
-
+    try:
+        points_before = _count_points(query_api, org, bucket, measurement, run_id)
+    except Exception as exc:
+        logger.warning("count before delete failed: %s", exc)
+        points_before = -1
+        
     start = "1970-01-01T00:00:00Z"
     stop = "2100-01-01T00:00:00Z"
     predicate = f'_measurement="{measurement}"'
@@ -691,26 +695,34 @@ def step_run_e2e(
     _ = time.perf_counter() - query_started
     query_summary = _summarize_query_runs(query_runs)
 
-    query_api = sut.client.query_api()
-    delete_api = sut.client.delete_api()
-
     delete_started = time.perf_counter()
     delete_runs: List[DeleteRunMetrics] = []
-    with ThreadPoolExecutor(max_workers=max(1, min(32, bucket_count))) as ex:
-        futs = [
-            ex.submit(
-                _delete_bucket_data,
-                bucket=bn,
-                org=sut.org,
-                delete_api=delete_api,
-                query_api=query_api,
-                measurement=measurement_name,
-                run_id=run_id,
-            )
-            for bn in bucket_names
-        ]
-        for f in as_completed(futs):
-            delete_runs.append(f.result())
+
+    with InfluxDBClient(
+        url=sut.url,
+        token=sut.token,
+        org=sut.org,
+        timeout=300_000,
+    ) as admin_client:
+        query_api = admin_client.query_api()
+        delete_api = admin_client.delete_api()
+
+        with ThreadPoolExecutor(max_workers=max(1, min(32, bucket_count))) as ex:
+            futs = [
+                ex.submit(
+                    _delete_bucket_data,
+                    bucket=bn,
+                    org=sut.org,
+                    delete_api=delete_api,
+                    query_api=query_api,
+                    measurement=measurement_name,
+                    run_id=run_id,
+                )
+                for bn in bucket_names
+            ]
+            for f in as_completed(futs):
+                delete_runs.append(f.result())
+
     delete_wall_s = time.perf_counter() - delete_started
 
     total_before = sum(d.points_before for d in delete_runs)
