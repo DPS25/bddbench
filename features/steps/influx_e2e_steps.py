@@ -3,7 +3,7 @@ import logging
 import statistics
 import time
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from behave import then, when
 from behave.runner import Context
@@ -15,6 +15,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from src.utils import (
     base_timestamp_for_precision,
     build_benchmark_point,
+    generate_base_point,
     get_main_influx_write_api,
     influx_precision_from_str,
     main_influx_is_configured,
@@ -453,7 +454,13 @@ def _delete_bucket_data(
 # MAIN export 
 # ==========================================================
 
-def build_e2e_export_point(meta: Dict[str, Any], summary: Dict[str, Any], scenario_id: str) -> Point:
+def build_e2e_export_point(
+    *,
+    context: Context,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    scenario_id: str,
+) -> Point:
     w = summary.get("write", {}) or {}
     q = summary.get("query", {}) or {}
     d = summary.get("delete", {}) or {}
@@ -462,12 +469,12 @@ def build_e2e_export_point(meta: Dict[str, Any], summary: Dict[str, Any], scenar
     q_lat_total = ((q.get("latency_stats", {}) or {}).get("total", {}) or {})
 
     return (
-        Point("bddbench_e2e_result")
-        .tag("mode", str(meta.get("mode", "")))      
-        .tag("group", str(meta.get("group", "")))   
+        generate_base_point(context=context, measurement="bddbench_e2e_result")
+        .tag("mode", str(meta.get("mode", "")))
+        .tag("group", str(meta.get("group", "")))
         .tag("bucket_prefix", str(meta.get("bucket_prefix", "")))
         .tag("base_measurement", str(meta.get("base_measurement", "")))
-        .tag("measurement", str(meta.get("measurement", "")))
+        .tag("source_measurement", str(meta.get("measurement", "")))  
         .tag("precision", str(meta.get("precision", "")))
         .tag("write_compression", str(meta.get("write_compression", "")))
         .tag("query_type", str(meta.get("query_type", "")))
@@ -492,7 +499,6 @@ def build_e2e_export_point(meta: Dict[str, Any], summary: Dict[str, Any], scenar
         .field("ok", bool(summary.get("ok", False)))
     )
 
-
 def _export_e2e_result_to_main_influx(result: Dict[str, Any], outfile: str, context: Context) -> None:
     if not main_influx_is_configured(context):
         return
@@ -508,7 +514,12 @@ def _export_e2e_result_to_main_influx(result: Dict[str, Any], outfile: str, cont
     summary = result.get("summary", {})
     scenario_id = scenario_id_from_outfile(outfile, prefixes=("e2e-",))
 
-    p = build_e2e_export_point(meta=meta, summary=summary, scenario_id=scenario_id)
+    p = build_e2e_export_point(
+        context=context,
+        meta=meta,
+        summary=summary,
+        scenario_id=scenario_id,
+    )
 
     write_to_influx(
         write_api=write_api,
@@ -564,9 +575,9 @@ def step_run_e2e(
 
     run_id = getattr(context, "run_id", None)
     run_suffix = str(run_id) if run_id else "run"
-    tags = set(getattr(context, "tags", []) or [])
-    mode = "experimental" if "experimental" in tags else "normal"
-    group = "multibucket" if "multibucket" in tags else "singlebucket"
+    scenario_tags = set(getattr(getattr(context, "scenario", None), "tags", []) or [])
+    mode = "experimental" if "experimental" in scenario_tags else "normal"
+    group = "multibucket" if "multibucket" in scenario_tags else "singlebucket"
 
     bucket_names = [f"{bucket_prefix}_{run_suffix}_{i}" for i in range(bucket_count)]
     measurement_name = f"{measurement}_{run_suffix}"
@@ -576,7 +587,12 @@ def step_run_e2e(
 
     for bn in bucket_names:
         try:
-            _create_bucket_compat(buckets_api, bucket_name=bn, org=sut.org, org_id=org_id)
+            _create_bucket_compat(
+                buckets_api,
+                bucket_name=bn,
+                org=sut.org,
+                org_id=org_id,
+            )
         except Exception:
             pass
         _ensure_bucket_exists(buckets_api, bn)
