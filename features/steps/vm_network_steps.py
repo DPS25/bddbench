@@ -8,8 +8,8 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 from behave import when, then
 
@@ -17,84 +17,61 @@ from src.utils import write_json_report
 
 logger = logging.getLogger("bddbench.vm_network_steps")
 
-def _infer_default_peer_host() -> Optional[str]:
-    """
-    Infer peer host from envs used across the repo.
+SUT_PLACEHOLDER = "__SUT__"
+_ALLOWED_DIRECTIONS = ("runner->target", "target->runner")
 
-    Priority:
-      1) INFLUXDB_SUT_URL 
-      2) SUT_SSH          
+
+# ============================================================
+# Target host selection (derive from INFLUXDB_SUT_URL)
+# ============================================================
+
+def _sut_host_from_influxdb_sut_url() -> str:
+    """
+    Parse host from INFLUXDB_SUT_URL.
+    Example: http://192.168.8.116:8086 -> 192.168.8.116
     """
     sut_url = (os.getenv("INFLUXDB_SUT_URL") or "").strip()
-    m = re.search(r"\d+\.\d+\.\d+\.\d+", sut_url)
-    if m:
-        return m.group(0)
+    if not sut_url:
+        raise AssertionError(
+            "INFLUXDB_SUT_URL is not set. It is required to derive the default network benchmark target. "
+            "Set it via envs/<ENV_NAME>.env or export it before running behave."
+        )
 
-    sut_ssh = (os.getenv("SUT_SSH") or "").strip()
-    if sut_ssh:
-        return sut_ssh.split("@")[-1].strip()
+    # Allow values like "192.168.8.116:8086" (no scheme)
+    if "://" not in sut_url:
+        sut_url = "http://" + sut_url
 
-    return None
+    u = urlparse(sut_url)
+    host = (u.hostname or "").strip()
+    if not host:
+        raise AssertionError(f"Could not parse host from INFLUXDB_SUT_URL={sut_url!r}")
+    return host
+
 
 def _pick_target_host(feature_value: str) -> str:
     """
-    Resolve the network benchmark peer host robustly.
-
-    - If BDD_NET_TARGET_HOST is set => use it
-    - Else if feature_value is real => use it
-    - Else infer from INFLUXDB_SUT_URL / SUT_SSH
+    Default target_host is derived from INFLUXDB_SUT_URL.
+    Feature may override by providing an explicit host/IP in the Examples table.
     """
-    env_override = (os.getenv("BDD_NET_TARGET_HOST") or "").strip()
-    if env_override:
-        return env_override
-
     fv = (feature_value or "").strip()
-    if fv and fv != "__SET_BY_ENV__":
-        return fv
+    if not fv or fv == SUT_PLACEHOLDER:
+        return _sut_host_from_influxdb_sut_url()
+    return fv
 
-    inferred = _infer_default_peer_host()
-    if inferred:
-        return inferred
 
+def _normalize_direction(direction: str) -> str:
+    v = (direction or "").strip()
+    if v in _ALLOWED_DIRECTIONS:
+        return v
     raise AssertionError(
-        "Network benchmark peer not configured. Set BDD_NET_TARGET_HOST=<ip/host> "
-        "or configure INFLUXDB_SUT_URL (or SUT_SSH on older branches)."
+        f"Invalid direction={v!r}. Direction must be one of: {_ALLOWED_DIRECTIONS}. "
+        "Direction must be specified in the feature (Examples table), not via environment variables."
     )
 
-def _pick_target_ssh_host(peer_host: str) -> str:
-    """
-    Derive SSH destination for the peer
 
-    Defaults to nixos@<peer> 
-    """
-    ssh_override = (os.getenv("BDD_NET_TARGET_SSH") or "").strip()
-    if ssh_override:
-        return ssh_override
-
-    ssh_user = (os.getenv("BDD_NET_SSH_USER") or "nixos").strip() or "nixos"
-
-    use_sut_ssh_as_is = (os.getenv("BDD_NET_USE_SUT_SSH_AS_IS") or "").strip().lower() in ("1", "true", "yes")
-
-    sut_ssh = (os.getenv("SUT_SSH") or "").strip()
-    if sut_ssh:
-        if use_sut_ssh_as_is:
-            return sut_ssh
-        sut_host = sut_ssh.split("@")[-1].strip()
-        if sut_host:
-            return f"{ssh_user}@{sut_host}"
-
-    h = (peer_host or "").strip()
-    if "@" in h:
-        if use_sut_ssh_as_is:
-            return h
-        host_part = h.split("@")[-1].strip()
-        return f"{ssh_user}@{host_part}"
-        
-    return f"{ssh_user}@{h}"
-
-# ----------------------------
-# small helpers
-# ----------------------------
+# ============================================================
+# Small helpers
+# ============================================================
 
 _IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
 
@@ -109,10 +86,11 @@ def _is_literal_ipv4(s: str) -> bool:
     except Exception:
         return False
 
+
 def _guess_runner_ip() -> Optional[str]:
     """
     Best-effort: figure out primary outbound IP. We avoid external traffic
-    just open a UDP "connection" to a well-known IP.
+    and just open a UDP "connection" to a well-known IP.
     """
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -122,6 +100,7 @@ def _guess_runner_ip() -> Optional[str]:
         return ip
     except Exception:
         return None
+
 
 def _run_local(cmd: list, timeout_s: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -133,14 +112,16 @@ def _run_local(cmd: list, timeout_s: int = 60) -> subprocess.CompletedProcess:
         check=False,
     )
 
+
 def _ssh_run(host: str, remote_cmd: str, timeout_s: int = 60) -> subprocess.CompletedProcess:
     """
     Run a remote command via SSH.
-    Use BatchMode/ConnectTimeout to avoid hanging forever.
+    IMPORTANT: do NOT use "bash -lc" (login shell) because it can hang on some Nix setups.
+    Use: ssh host -- bash -c "<cmd>"
     """
-
     connect_timeout = (os.getenv("BDD_NET_SSH_CONNECT_TIMEOUT_S") or "6").strip()
     extra_opts = (os.getenv("BDD_NET_SSH_OPTS") or "").strip()
+
     ssh_cmd = [
         "ssh",
         "-o", "BatchMode=yes",
@@ -149,13 +130,9 @@ def _ssh_run(host: str, remote_cmd: str, timeout_s: int = 60) -> subprocess.Comp
     ]
     if extra_opts:
         ssh_cmd += shlex.split(extra_opts)
-    ssh_cmd += [
-        host,
-        "bash",
-        "-lc",
-        remote_cmd,
-    ]
-    
+
+    ssh_cmd += [host, "--", "bash", "-c", remote_cmd]
+
     return subprocess.run(
         ssh_cmd,
         stdout=subprocess.PIPE,
@@ -164,6 +141,7 @@ def _ssh_run(host: str, remote_cmd: str, timeout_s: int = 60) -> subprocess.Comp
         timeout=timeout_s,
         check=False,
     )
+
 
 def _resolve_target_ip(target_host: str) -> Tuple[str, str]:
     """
@@ -177,10 +155,11 @@ def _resolve_target_ip(target_host: str) -> Tuple[str, str]:
     except Exception:
         return target_host.strip(), "fallback(target_host)"
 
+
 def _extract_json_from_messy_output(text: str) -> Optional[Dict[str, Any]]:
     """
-    iperf3 -J should output pure JSON, but wrappers (nix/ssh) sometimes
-    add warnings or banners on stdout. This extracts the first {...} block.
+    iperf3 -J should output pure JSON, but wrappers sometimes add banners.
+    Extract the first {...} block.
     """
     if not text:
         return None
@@ -210,16 +189,80 @@ def _extract_json_from_messy_output(text: str) -> Optional[Dict[str, Any]]:
                     return None
     return None
 
-# ----------------------------
+
+def _port_in_use_local(port: int) -> bool:
+    try:
+        proc = _run_local(["ss", "-lnt"], timeout_s=3)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return f":{port} " in out or f":{port}\n" in out or re.search(rf":{port}\b", out) is not None
+    except Exception:
+        return False
+
+
+def _candidate_ports(default_port: int, explicit_port: Optional[int]) -> Tuple[int, ...]:
+    """
+    If user pinned a port via env -> only that port.
+    Else try a small fixed range (firewall-friendly) starting from default.
+    """
+    if explicit_port is not None:
+        return (explicit_port,)
+    return tuple(range(default_port, default_port + 10))  # 5201..5210 by default
+
+
+# ============================================================
+# SSH target selection (still allowed via env; not part of FR#1)
+# ============================================================
+
+def _pick_target_ssh_host(peer_host: str) -> str:
+    """
+    Derive SSH destination for the peer.
+
+    Defaults to nixos@<peer>.
+    Can override with:
+      - BDD_NET_TARGET_SSH (full user@host)
+      - BDD_NET_SSH_USER (default nixos)
+      - BDD_NET_USE_SUT_SSH_AS_IS=1 (use SUT_SSH literally)
+    """
+    ssh_override = (os.getenv("BDD_NET_TARGET_SSH") or "").strip()
+    if ssh_override:
+        return ssh_override
+
+    ssh_user = (os.getenv("BDD_NET_SSH_USER") or "nixos").strip() or "nixos"
+    use_sut_ssh_as_is = (os.getenv("BDD_NET_USE_SUT_SSH_AS_IS") or "").strip().lower() in ("1", "true", "yes")
+
+    sut_ssh = (os.getenv("SUT_SSH") or "").strip()
+    if sut_ssh:
+        if use_sut_ssh_as_is:
+            return sut_ssh
+        sut_host = sut_ssh.split("@")[-1].strip()
+        if sut_host:
+            return f"{ssh_user}@{sut_host}"
+
+    h = (peer_host or "").strip()
+    if "@" in h:
+        if use_sut_ssh_as_is:
+            return h
+        host_part = h.split("@")[-1].strip()
+        return f"{ssh_user}@{host_part}"
+
+    return f"{ssh_user}@{h}"
+
+
+# ============================================================
 # iperf3 server helpers
-# ----------------------------
+# ============================================================
 
 _LOCAL_IPERF3_SERVER_PROC: Optional[subprocess.Popen] = None
 
+
 def _start_local_iperf3_server(port: int) -> Dict[str, Any]:
+    """
+    Start local one-shot server: iperf3 -s -1 -p <port>
+    """
     global _LOCAL_IPERF3_SERVER_PROC
-    if _LOCAL_IPERF3_SERVER_PROC and _LOCAL_IPERF3_SERVER_PROC.poll() is None:
-        return {"ok": True, "already_running": True, "port": port}
+
+    if _port_in_use_local(port):
+        return {"ok": False, "error": f"port {port} already in use", "port": port}
 
     cmd = ["iperf3", "-s", "-1", "-p", str(port)]
     try:
@@ -231,9 +274,19 @@ def _start_local_iperf3_server(port: int) -> Dict[str, Any]:
         )
         time.sleep(0.25)
         ok = (_LOCAL_IPERF3_SERVER_PROC.poll() is None)
-        return {"ok": ok, "already_running": False, "port": port}
+        if not ok:
+            stderr = ""
+            try:
+                _out, _err = _LOCAL_IPERF3_SERVER_PROC.communicate(timeout=1)
+                stderr = (_err or "").strip()
+            except Exception:
+                pass
+            return {"ok": False, "error": stderr or "failed to start", "port": port}
+
+        return {"ok": True, "port": port, "cmd": cmd}
     except Exception as exc:
         return {"ok": False, "error": repr(exc), "port": port}
+
 
 def _stop_local_iperf3_server() -> None:
     global _LOCAL_IPERF3_SERVER_PROC
@@ -249,36 +302,58 @@ def _stop_local_iperf3_server() -> None:
     finally:
         _LOCAL_IPERF3_SERVER_PROC = None
 
-def _start_remote_iperf3_server_oneoff(target_host: str, port: int) -> Dict[str, Any]:
+
+def _start_remote_iperf3_server_oneoff(ssh_target: str, port: int) -> Dict[str, Any]:
     """
-    Start one-off iperf3 server on target_host
-    Uses nohup so SSH returns immediately.
+    Start one-off iperf3 server on remote via SSH.
+    Use nohup + (optional) timeout to avoid lingering listener.
     """
     log_path = f"/tmp/bddbench_iperf3_remote_{port}.log"
+
     script = (
-        f"set -e; "
+        "set -e; "
         f"LOG={shlex.quote(log_path)}; "
-        f"(command -v iperf3 >/dev/null 2>&1 && "
-        f" nohup iperf3 -s -1 -p {port} >$LOG 2>&1 &)"
-        f" || "
-        f"(command -v nix >/dev/null 2>&1 && "
-        f" nohup nix run nixpkgs#iperf3 -- -s -1 -p {port} >$LOG 2>&1 &)"
-        f" || "
-        f"(echo 'iperf3 not available on target and nix not found' >&2; exit 1); "
-        f"sleep 0.25; "
-        f"ss -lntp | grep -E ':{port}\\b'"
+        "RUN_SRV() { "
+        f"  if command -v timeout >/dev/null 2>&1; then "
+        f"    nohup timeout 40s iperf3 -s -1 -p {port} >$LOG 2>&1 & "
+        f"  else "
+        f"    nohup iperf3 -s -1 -p {port} >$LOG 2>&1 & "
+        f"  fi "
+        "}; "
+        "(command -v iperf3 >/dev/null 2>&1 && RUN_SRV) "
+        " || "
+        f"(command -v nix >/dev/null 2>&1 && nohup nix run nixpkgs#iperf3 -- -s -1 -p {port} >$LOG 2>&1 &) "
+        " || "
+        "(echo 'iperf3 not available on target and nix not found' >&2; exit 1); "
+        "sleep 0.25; "
+        f"ss -lnt | grep -E ':{port}\\b' >/dev/null; "
+        "echo LISTEN_OK"
     )
+
+    timeout_s = int(os.getenv("BDD_NET_REMOTE_SERVER_TIMEOUT_S", "60"))
+
     try:
-        proc = _ssh_run(target_host, script, timeout_s=25)
-        combined = (proc.stdout or "") + (proc.stderr or "")
-        ok = (proc.returncode == 0) and (f":{port}" in combined)
+        proc = _ssh_run(ssh_target, script, timeout_s=timeout_s)
+        combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        ok = (proc.returncode == 0) and ("LISTEN_OK" in combined)
         return {
             "ok": ok,
             "rc": proc.returncode,
             "stdout": (proc.stdout or "").strip(),
             "stderr": (proc.stderr or "").strip(),
             "log_path": log_path,
-            "ssh_target": target_host,
+            "ssh_target": ssh_target,
+            "port": port,
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "rc": None,
+            "stdout": "",
+            "stderr": f"TimeoutExpired({exc})",
+            "log_path": log_path,
+            "ssh_target": ssh_target,
+            "port": port,
         }
     except Exception as exc:
         return {
@@ -287,12 +362,14 @@ def _start_remote_iperf3_server_oneoff(target_host: str, port: int) -> Dict[str,
             "stdout": "",
             "stderr": repr(exc),
             "log_path": log_path,
-            "ssh_target": target_host,
+            "ssh_target": ssh_target,
+            "port": port,
         }
 
-# ----------------------------
+
+# ============================================================
 # iperf3 client runners
-# ----------------------------
+# ============================================================
 
 def _iperf3_client_args(
     server_ip: str,
@@ -316,6 +393,7 @@ def _iperf3_client_args(
         args += ["-u", "-b", str(udp_bitrate)]
     return args
 
+
 def _run_iperf3_client_local(
     server_ip: str,
     port: int,
@@ -335,13 +413,10 @@ def _run_iperf3_client_local(
         connect_timeout_ms=connect_timeout_ms,
     )
 
-    meta = {
-        "cmd": cmd,
-        "timeout_s": 45,
-    }
+    meta = {"cmd": cmd, "timeout_s": 60}
 
     try:
-        proc = _run_local(cmd, timeout_s=45)
+        proc = _run_local(cmd, timeout_s=60)
         meta.update(
             {
                 "returncode": proc.returncode,
@@ -361,8 +436,9 @@ def _run_iperf3_client_local(
         meta["exception"] = repr(exc)
         return None, repr(exc), meta
 
+
 def _run_iperf3_client_remote_via_ssh(
-    client_host: str,
+    client_ssh: str,
     server_ip: str,
     port: int,
     protocol: str,
@@ -381,20 +457,17 @@ def _run_iperf3_client_remote_via_ssh(
         connect_timeout_ms=connect_timeout_ms,
     )
 
-    meta = {
-        "cmd": cmd,
-        "timeout_s": 60,
-    }
+    meta = {"cmd": cmd, "timeout_s": 90}
 
     remote = (
-        f"set -e; "
+        "set -e; "
         f"(command -v iperf3 >/dev/null 2>&1 && {' '.join(map(shlex.quote, cmd))})"
-        f" || "
+        " || "
         f"(command -v nix >/dev/null 2>&1 && nix run nixpkgs#iperf3 -- {' '.join(map(shlex.quote, cmd[1:]))})"
     )
 
     try:
-        proc = _ssh_run(client_host, remote, timeout_s=60)
+        proc = _ssh_run(client_ssh, remote, timeout_s=90)
         meta.update(
             {
                 "returncode": proc.returncode,
@@ -414,13 +487,10 @@ def _run_iperf3_client_remote_via_ssh(
         meta["exception"] = repr(exc)
         return None, repr(exc), meta
 
+
 def _extract_iperf3_metrics(protocol: str, raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not raw or not isinstance(raw, dict):
-        return {
-            "throughput_mbps": None,
-            "jitter_ms": None,
-            "packet_loss_pct": None,
-        }
+        return {"throughput_mbps": None, "jitter_ms": None, "packet_loss_pct": None}
 
     end = raw.get("end") or {}
     if protocol.lower() == "udp":
@@ -442,9 +512,10 @@ def _extract_iperf3_metrics(protocol: str, raw: Optional[Dict[str, Any]]) -> Dic
         "packet_loss_pct": None,
     }
 
-# ----------------------------
+
+# ============================================================
 # ping helpers
-# ----------------------------
+# ============================================================
 
 def _run_ping(target_ip: str, packet_count: int) -> Tuple[str, Optional[str]]:
     cmd = ["ping", "-n", "-c", str(packet_count), target_ip]
@@ -460,12 +531,8 @@ def _run_ping(target_ip: str, packet_count: int) -> Tuple[str, Optional[str]]:
     except Exception as exc:
         return "", repr(exc)
 
+
 def _parse_ping_metrics(out: str) -> Dict[str, Any]:
-    """
-    Parse ping summary line. Example:
-      rtt min/avg/max/mdev = 0.123/0.234/0.345/0.012 ms
-      20 packets transmitted, 20 received, 0% packet loss, time 19016ms
-    """
     metrics: Dict[str, Any] = {
         "rtt_min_ms": None,
         "rtt_avg_ms": None,
@@ -496,52 +563,52 @@ def _parse_ping_metrics(out: str) -> Dict[str, Any]:
 
     return metrics
 
-# ----------------------------
+
+# ============================================================
 # behave steps
-# ----------------------------
+# ============================================================
 
-@when('I run an iperf3 "{protocol}" benchmark to "{target_host}" with {parallel_streams:d} streams for {duration_s:d} seconds')
-def step_run_iperf3_benchmark(context, protocol, target_host, parallel_streams, duration_s):
+@when('I run an iperf3 "{protocol}" benchmark "{direction}" to "{target_host}" with {parallel_streams:d} streams for {duration_s:d} seconds')
+def step_run_iperf3_benchmark(context, protocol, direction, target_host, parallel_streams, duration_s):
     target_host = _pick_target_host(target_host)
+    direction = _normalize_direction(direction)
 
-    direction = os.getenv("BDD_NET_DIRECTION", "runner->target")
-    direction = (direction or "").strip()
-    if direction not in ("runner->target", "target->runner"):
-        raise AssertionError(
-            f"Invalid BDD_NET_DIRECTION={direction!r} "
-            f"(use runner->target or target->runner). "
-            f"Tip: if you see 'target-' your env line is truncated; set BDD_NET_DIRECTION=\"target->runner\""
-        )
-
-    iperf_port = int(os.getenv("BDD_NET_IPERF_PORT", "5201"))
     udp_bitrate = os.getenv("BDD_NET_UDP_BITRATE", "25G")
     connect_timeout_ms = int(os.getenv("BDD_NET_CONNECT_TIMEOUT_MS", "3000"))
 
     runner_host = socket.gethostname()
     runner_ip = os.getenv("BDD_NET_RUNNER_IP") or _guess_runner_ip() or ""
-    if not runner_ip:
-        raise AssertionError("Cannot determine runner IP. Set BDD_NET_RUNNER_IP=...")
-
     peer_ip, origin = _resolve_target_ip(target_host)
     peer_ssh = _pick_target_ssh_host(target_host)
+
+    port_raw = (os.getenv("BDD_NET_IPERF_PORT") or "").strip()
+    explicit_port = int(port_raw) if port_raw else None
+    ports_to_try = _candidate_ports(default_port=5201, explicit_port=explicit_port)
 
     raw = None
     err = None
     meta_extra: Dict[str, Any] = {}
     server_info: Dict[str, Any] = {}
+    chosen_port: Optional[int] = None
 
     try:
         if direction == "runner->target":
-            server_info = _start_remote_iperf3_server_oneoff(target_host=peer_ssh, port=iperf_port)
+            # start server on peer, run client locally
+            for p in ports_to_try:
+                chosen_port = p
+                server_info = _start_remote_iperf3_server_oneoff(ssh_target=peer_ssh, port=chosen_port)
+                if server_info.get("ok"):
+                    break
+                if explicit_port is not None:
+                    break  # pinned port -> do not retry
+
             if not server_info.get("ok"):
-                err = f"iperf3 server start failed on {peer_ssh}: {(server_info.get('stderr') or server_info)}"
-                raw = None
+                err = f"iperf3 server start failed on {peer_ssh}: {server_info.get('stderr') or server_info}"
                 meta_extra = {"skipped_client": True}
-                context.failed = True
             else:
                 raw, err, meta_extra = _run_iperf3_client_local(
                     server_ip=peer_ip,
-                    port=iperf_port,
+                    port=chosen_port,
                     protocol=protocol,
                     duration_s=duration_s,
                     parallel_streams=parallel_streams,
@@ -550,32 +617,40 @@ def step_run_iperf3_benchmark(context, protocol, target_host, parallel_streams, 
                 )
 
         else:
-            server_info = _start_local_iperf3_server(port=iperf_port)
+            # direction == "target->runner": start server locally, run client on peer via ssh
+            if not runner_ip:
+                raise AssertionError("Cannot determine runner IP. Set BDD_NET_RUNNER_IP=...")
+
+            for p in ports_to_try:
+                chosen_port = p
+                server_info = _start_local_iperf3_server(port=chosen_port)
+                if server_info.get("ok"):
+                    break
+                if explicit_port is not None:
+                    break  # pinned port -> do not retry
+
             if not server_info.get("ok"):
+                # if default 5201 is taken, this will try 5202.. automatically unless user pinned a port
                 err = f"Failed to start local iperf3 server: {server_info}"
-                raw = None
                 meta_extra = {"skipped_client": True}
-                context.failed = True
             else:
                 raw, err, meta_extra = _run_iperf3_client_remote_via_ssh(
-                    client_host=peer_ssh,
+                    client_ssh=peer_ssh,
                     server_ip=runner_ip,
-                    port=iperf_port,
+                    port=chosen_port,
                     protocol=protocol,
                     duration_s=duration_s,
                     parallel_streams=parallel_streams,
                     udp_bitrate=udp_bitrate,
                     connect_timeout_ms=connect_timeout_ms,
                 )
-
     finally:
         if direction == "target->runner":
             _stop_local_iperf3_server()
 
     metrics = _extract_iperf3_metrics(protocol=protocol, raw=raw)
-
     if metrics.get("throughput_mbps") is None and not err:
-        err = "missing throughput in iperf3 JSON (likely stdout polluted; check metrics.raw._raw_stdout/_raw_stderr)"
+        err = "missing throughput in iperf3 JSON (stdout may be polluted)"
 
     context.network_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -588,7 +663,7 @@ def step_run_iperf3_benchmark(context, protocol, target_host, parallel_streams, 
             "target_host": target_host,
             "parallel_streams": parallel_streams,
             "duration_s": duration_s,
-            "iperf_port": iperf_port,
+            "iperf_port": chosen_port,
             "udp_bitrate": udp_bitrate if protocol.lower() == "udp" else None,
             "connect_timeout_ms": connect_timeout_ms,
         },
@@ -609,6 +684,7 @@ def step_run_iperf3_benchmark(context, protocol, target_host, parallel_streams, 
             "raw": raw,
         },
     }
+
 
 @when('I run a ping benchmark to "{target_host}" with {packet_count:d} packets')
 def step_run_ping_benchmark(context, target_host, packet_count):
@@ -648,10 +724,21 @@ def step_run_ping_benchmark(context, target_host, packet_count):
         },
     }
 
+
 @then('I store the network benchmark result as "{outfile}"')
 def step_store_network_result(context, outfile):
     data = getattr(context, "network_benchmark", None)
     if not isinstance(data, dict):
         raise AssertionError("No network benchmark found in context (did the When step run?)")
 
-    write_json_report(outfile, data, logger_=logger)
+    write_json_report(
+        outfile,
+        data,
+        logger_=logger,
+        log_prefix="Stored network benchmark result to ",
+    )
+
+    err = ((data.get("result") or {}).get("meta") or {}).get("error")
+    if err:
+        raise AssertionError(f"Network benchmark failed (report written): {err}")
+
