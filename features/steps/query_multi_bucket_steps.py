@@ -467,10 +467,7 @@ def _create_bucket_compat(
     org: str,
     org_id: str | None,
 ) -> None:
-    """
-    InfluxDB client versions differ: some expect org=..., others org_id=...
-    We try both to avoid hard failures.
-    """
+   
     try:
         buckets_api.create_bucket(bucket_name=bucket_name, org=org)
     except TypeError:
@@ -508,14 +505,12 @@ def _run_duration_writer_worker(
     metrics: List[BatchWriteMetrics] = []
     batch_index = 0
 
-    # Thread-local WriteApi (avoid sharing a single instance across threads)
+    
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
     while time.perf_counter() < stop_at:
         points = []
         for i in range(batch_size):
-            # Keep the original scheme; if you want globally unique idx across writers,
-            # you can incorporate writer_id into global_idx.
             global_idx = batch_index * batch_size + i
             p = build_benchmark_point(
                 measurement=measurement,
@@ -587,13 +582,7 @@ def step_run_multi_bucket_query_benchmark(
     output_format: str,
     compression: str,
 ):
-    """
-    Multi-bucket query benchmark.
 
-    Parallelism matches the multi-bucket write benchmark:
-      - max_workers = bucket_count * concurrent_clients
-      - tasks are scheduled per bucket * per client
-    """
 
     url = context.influxdb.sut.url
     token = context.influxdb.sut.token
