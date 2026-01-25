@@ -58,7 +58,7 @@
             set -e
             mkdir -p reports/plots
             rm -f reports/plots/*
-
+            export PYTHONPATH=.
             # Usage: run_block <tag> <feature_name> <measurement_name>
             run_block() {
               local tag="$1"
