@@ -1,0 +1,42 @@
+name: Host SUT Benchmarking
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  host-performance:
+    name: Baseline Host Metrics
+    runs-on: dsp25-main-influx
+    steps:
+      - name: Checkout bddbench
+        uses: actions/checkout@v4
+        with:
+          path: bddbench
+
+      - name: Checkout nix
+        uses: actions/checkout@v4
+        with:
+          repository: DPS25/nix
+          token: ${{ secrets.GH_PAT }}
+          path: nix
+
+      - name: Run Host Benchmarks
+        working-directory: ./bddbench
+        run: |
+          START_TIME=$(date +%s%3N)
+          export ENV_NAME=benedikt_dsp25
+          
+          # Run the host-specific benchmark from your Flake
+          nix develop --command run-behave-host-benchmarks-5-times
+          
+          END_TIME=$(date +%s%3N)
+          
+          BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
+          # Filter specifically for host scenarios
+          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=cpu&var-scenario_id=memory&var-scenario_id=storage&timezone=browser"
+          FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
+          
+          echo "##  Host SUT Performance Baseline" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana:** [View Host Metrics]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+g
