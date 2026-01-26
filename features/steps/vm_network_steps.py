@@ -20,6 +20,29 @@ logger = logging.getLogger("bddbench.vm_network_steps")
 SUT_PLACEHOLDER = "__SUT__"
 _ALLOWED_DIRECTIONS = ("runner->target", "target->runner")
 
+# MAIN export gating:
+# - Default: OFF (so local dev won't try to write MAIN)
+# - Enable by setting ONE of these env vars to truthy: 1/true/yes/on
+_EXPORT_MAIN_ENV_KEYS = (
+    "BDD_EXPORT_MAIN_INFLUX",
+    "BDD_MAIN_INFLUX_EXPORT",
+    "EXPORT_MAIN_INFLUX",
+    "EXPORT_TO_MAIN_INFLUX",
+    "BDD_EXPORT_MAIN",
+    "EXPORT_MAIN",
+)
+
+
+def _is_truthy(v: str) -> bool:
+    return (v or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _main_export_enabled() -> bool:
+    for k in _EXPORT_MAIN_ENV_KEYS:
+        if _is_truthy(os.getenv(k, "")):
+            return True
+    return False
+
 
 # ============================================================
 # Target host selection (derive from INFLUXDB_SUT_URL)
@@ -565,6 +588,175 @@ def _parse_ping_metrics(out: str) -> Dict[str, Any]:
 
 
 # ============================================================
+# MAIN Influx export (NEW)
+# ============================================================
+
+def _env_first(*keys: str) -> str:
+    for k in keys:
+        v = (os.getenv(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
+def _get_main_bucket_org_from_context_or_env(context) -> Tuple[str, str]:
+    # Try context.influxdb.main.{bucket,org}
+    bucket = ""
+    org = ""
+    influxdb = getattr(context, "influxdb", None)
+    main = getattr(influxdb, "main", None) if influxdb is not None else None
+    if main is not None:
+        bucket = (
+            (getattr(main, "bucket", None) or "")
+            or (getattr(main, "bucket_name", None) or "")
+        ).strip()
+        org = (
+            (getattr(main, "org", None) or "")
+            or (getattr(main, "org_name", None) or "")
+        ).strip()
+
+    # Fallback to env (names are guessed; keep multiple aliases)
+    if not org:
+        org = _env_first("INFLUXDB_MAIN_ORG", "MAIN_INFLUXDB_ORG", "INFLUX_MAIN_ORG")
+    if not bucket:
+        bucket = _env_first("INFLUXDB_MAIN_BUCKET", "MAIN_INFLUXDB_BUCKET", "INFLUX_MAIN_BUCKET")
+
+    return bucket, org
+
+
+def _network_result_to_point(context, data: Dict[str, Any], outfile: str):
+    """
+    Build an InfluxDB point for MAIN export.
+    We try to use generate_base_point() if available; otherwise fall back to Point().
+    """
+    # Lazy import to avoid hard dependency for users who never export.
+    try:
+        from src.utils import generate_base_point  # type: ignore
+    except Exception:
+        generate_base_point = None
+
+    try:
+        from influxdb_client import Point  # type: ignore
+    except Exception as exc:
+        raise AssertionError(f"influxdb_client is required for MAIN export, but not available: {exc!r}")
+
+    params = data.get("params") or {}
+    metrics = ((data.get("result") or {}).get("metrics")) or {}
+    meta = ((data.get("result") or {}).get("meta")) or {}
+    err = (meta.get("error") or "").strip()
+
+    measurement = "bddbench_network_result"
+    if generate_base_point is not None:
+        try:
+            p = generate_base_point(context=context, measurement=measurement)
+        except Exception:
+            p = Point(measurement)
+    else:
+        p = Point(measurement)
+
+    # Tags (dimensions)
+    p.tag("mode", str(params.get("mode", "")))
+    p.tag("protocol", str(params.get("protocol", "")))
+    p.tag("direction", str(params.get("direction", "")))
+    p.tag("target_host", str(params.get("target_host", "")))
+
+    # Fields
+    p.field("ok", err == "")
+    p.field("report_file", str(outfile))
+
+    if err:
+        # Keep error as field (not tag) to avoid huge tag cardinality
+        p.field("error", err)
+
+    # Numeric fields: only write if value is not None
+    for k, v in (metrics or {}).items():
+        if v is None:
+            continue
+        if isinstance(v, (int, float)):
+            p.field(k, float(v) if isinstance(v, float) else v)
+
+    # Some metrics dictionaries include packet_count etc (ints) - above handles.
+
+    return p
+
+
+def _get_main_write_api_and_cfg(context):
+    """
+    Returns (client, write_api, bucket, org, created_client_bool)
+    """
+    # 1) Try project-native helper first (works when context.influxdb is initialized)
+    try:
+        from src.utils import get_main_influx_write_api  # type: ignore
+    except Exception:
+        get_main_influx_write_api = None
+
+    if get_main_influx_write_api is not None and hasattr(context, "influxdb"):
+        try:
+            client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+            bucket, org = _get_main_bucket_org_from_context_or_env(context)
+            if write_api is not None and bucket and org:
+                return client, write_api, bucket, org, False
+        except Exception:
+            # We'll fallback to env-based client below
+            pass
+
+    # 2) Fallback: build MAIN client from env vars (allows running network feature standalone)
+    try:
+        from influxdb_client import InfluxDBClient  # type: ignore
+        from influxdb_client.client.write_api import SYNCHRONOUS  # type: ignore
+    except Exception as exc:
+        raise AssertionError(f"influxdb_client is required for MAIN export, but not available: {exc!r}")
+
+    url = _env_first("INFLUXDB_MAIN_URL", "MAIN_INFLUXDB_URL", "INFLUX_MAIN_URL", "INFLUXDB_URL_MAIN")
+    token = _env_first("INFLUXDB_MAIN_TOKEN", "MAIN_INFLUXDB_TOKEN", "INFLUX_MAIN_TOKEN")
+    bucket = _env_first("INFLUXDB_MAIN_BUCKET", "MAIN_INFLUXDB_BUCKET", "INFLUX_MAIN_BUCKET")
+    org = _env_first("INFLUXDB_MAIN_ORG", "MAIN_INFLUXDB_ORG", "INFLUX_MAIN_ORG")
+
+    missing = [k for k, v in {
+        "INFLUXDB_MAIN_URL": url,
+        "INFLUXDB_MAIN_TOKEN": token,
+        "INFLUXDB_MAIN_BUCKET": bucket,
+        "INFLUXDB_MAIN_ORG": org,
+    }.items() if not v]
+    if missing:
+        raise AssertionError(
+            "MAIN export is enabled, but MAIN Influx env config is missing. "
+            f"Missing: {missing}. "
+            "Set e.g. INFLUXDB_MAIN_URL/INFLUXDB_MAIN_TOKEN/INFLUXDB_MAIN_ORG/INFLUXDB_MAIN_BUCKET (or their aliases)."
+        )
+
+    client = InfluxDBClient(url=url, token=token, org=org, timeout=30_000)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
+    return client, write_api, bucket, org, True
+
+
+def _export_network_result_to_main_influx(context, data: Dict[str, Any], outfile: str) -> Dict[str, str]:
+    """
+    Export one network result point to MAIN Influx (optional).
+    - Default: skipped
+    - If enabled: must succeed, otherwise raise (so CI can catch config issues)
+    """
+    if not _main_export_enabled():
+        return {"status": "skipped", "reason": "MAIN export disabled (set BDD_EXPORT_MAIN_INFLUX=1 to enable)."}
+
+    client, write_api, bucket, org, created = _get_main_write_api_and_cfg(context)
+    p = _network_result_to_point(context, data, outfile)
+
+    try:
+        write_api.write(bucket=bucket, org=org, record=p)
+    finally:
+        if created and client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    # Use print so it shows up in behave output (some setups don't surface logger.info)
+    print("Exported network benchmark result to MAIN Influx")
+    return {"status": "exported", "reason": ""}
+
+
+# ============================================================
 # behave steps
 # ============================================================
 
@@ -630,7 +822,6 @@ def step_run_iperf3_benchmark(context, protocol, direction, target_host, paralle
                     break  # pinned port -> do not retry
 
             if not server_info.get("ok"):
-                # if default 5201 is taken, this will try 5202.. automatically unless user pinned a port
                 err = f"Failed to start local iperf3 server: {server_info}"
                 meta_extra = {"skipped_client": True}
             else:
@@ -738,7 +929,12 @@ def step_store_network_result(context, outfile):
         log_prefix="Stored network benchmark result to ",
     )
 
+    # Optional MAIN export (gated)
+    export_status = _export_network_result_to_main_influx(context, data, outfile)
+    if export_status.get("status") == "skipped":
+        logger.info("MAIN export skipped: %s", export_status.get("reason"))
+
+    # Keep existing behavior: fail scenario if benchmark itself failed
     err = ((data.get("result") or {}).get("meta") or {}).get("error")
     if err:
         raise AssertionError(f"Network benchmark failed (report written): {err}")
-

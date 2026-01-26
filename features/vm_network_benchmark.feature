@@ -24,13 +24,18 @@ Feature: VM-to-VM network benchmark (health check)
 
     @iperf3 @smoke
     Examples:
-      | id          | direction       | target_host | protocol | streams | duration_s |
-      | tcp-1-r2t   | runner->target  | __SUT__     | tcp      | 1       | 10         |
-      | tcp-1-t2r   | target->runner  | __SUT__     | tcp      | 1       | 10         |
-      | tcp-4-r2t   | runner->target  | __SUT__     | tcp      | 4       | 10         |
-      | tcp-4-t2r   | target->runner  | __SUT__     | tcp      | 4       | 10         |
-      | udp-1-r2t   | runner->target  | __SUT__     | udp      | 1       | 10         |
-      | udp-1-t2r   | target->runner  | __SUT__     | udp      | 1       | 10         |
+      | id        | direction       | target_host | protocol | streams | duration_s |
+      | tcp-1-r2t | runner->target  | __SUT__     | tcp      | 1       | 10         |
+      | tcp-1-t2r | target->runner  | __SUT__     | tcp      | 1       | 10         |
+      | tcp-4-r2t | runner->target  | __SUT__     | tcp      | 4       | 10         |
+      | tcp-4-t2r | target->runner  | __SUT__     | tcp      | 4       | 10         |
+      | udp-1-r2t | runner->target  | __SUT__     | udp      | 1       | 10         |
+      | udp-1-t2r | target->runner  | __SUT__     | udp      | 1       | 10         |
+
+    @iperf3 @smoke @override_target_host
+    Examples:
+      | id                       | direction      | target_host | protocol | streams | duration_s |
+      | tcp-1-r2t-override-local | runner->target | localhost   | tcp      | 1       | 2          |
 
   Scenario Outline: Measure ICMP latency and packet loss with ping
     When I run a ping benchmark to "<target_host>" with <packets> packets
@@ -46,4 +51,3 @@ Feature: VM-to-VM network benchmark (health check)
     Examples:
       | id   | target_host | packets |
       | long | __SUT__     | 200     |
-

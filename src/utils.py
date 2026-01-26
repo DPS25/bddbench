@@ -228,6 +228,64 @@ def get_main_influx_write_api(
     return client, write_api
 
 
+def store_sut_benchmark_result(
+    context: Any,
+    *,
+    measurement: str,
+    meta: Dict[str, Any],
+    summary: Dict[str, Any],
+    outfile: Optional[str] = None,
+) -> None:
+    """
+    Backward-compatible helper used by cpu/memory/storage benchmark steps.
+
+    - Writes optional JSON outfile for artifact/debugging
+    - Exports exactly one aggregated Point to MAIN Influx (same style as query/multi/delete)
+    """
+
+    # 1) Optional: write JSON to outfile
+    if outfile:
+        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+        payload = {"measurement": measurement, "meta": meta, "summary": summary}
+        Path(outfile).write_text(
+            json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+            encoding="utf-8",
+        )
+
+    # 2) Export to MAIN Influx (skip gracefully if MAIN not configured)
+    _client, write_api = get_main_influx_write_api(context, create_client_if_missing=False)
+    if write_api is None:
+        return
+
+    p = generate_base_point(context=context, measurement=measurement)
+
+    # meta -> tags (Influx tags must be strings)
+    for k, v in (meta or {}).items():
+        if v is None:
+            continue
+        p.tag(str(k), str(v))
+
+    # summary -> fields
+    for k, v in (summary or {}).items():
+        if v is None:
+            continue
+        if isinstance(v, (int, float, bool, str)):
+            p.field(str(k), v)
+        else:
+            # fallback: serialize complex values
+            p.field(str(k), json.dumps(v, default=str))
+
+    write_to_influx(
+        write_api,
+        p,
+        success_msg=f"Exported {measurement} result to MAIN Influx",
+        failure_msg=f"Failed to export {measurement} result to MAIN Influx",
+    )
+
+
+
+
+
 def write_json_report(
     outfile: str,
     data: Any,
