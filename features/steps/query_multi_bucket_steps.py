@@ -24,7 +24,7 @@ from src.utils import (
     write_to_influx, generate_base_point,
 )
 
-logger = logging.getLogger("bddbench.influx_multi_bucket_steps")
+logger = logging.getLogger("bddbench.query_multi_bucket_steps")
 
 
 # ----------- Datatypes ------------
