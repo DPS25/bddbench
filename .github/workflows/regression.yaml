@@ -1,12 +1,21 @@
 name: Regression Test
+
 on:
-  push:
-    branches: [main]
+  # Trigger on PRs as usual
   pull_request:
     branches: [main]
+  # Trigger after Host Benchmarking finishes on main
+  workflow_run:
+    workflows: ["Host SUT Benchmarking"]
+    types:
+      - completed
 
 jobs:
   benchmarking:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
     runs-on: dsp25-main-influx
     strategy:
       fail-fast: false
@@ -43,20 +52,30 @@ jobs:
           nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
             --target-host dsp25-benedikt --build-host "" --sudo
 
-      - name: Run benchmark and Generate Link
+      - name: Run Full Benchmark Suite
         working-directory: ./bddbench
         run: |
-          # Capture Start Time (Unix milliseconds)
           START_TIME=$(date +%s%3N)
-          
           export ENV_NAME=benedikt_dsp25
-          nix develop --command run-everything-5-times
-          
+          nix develop --command run-full-benchmark-suite
           END_TIME=$(date +%s%3N)
           
           BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
           PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=\$__all&timezone=browser"
           FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
           
-          echo "### Influx ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
-          echo "Test run complete. [Click here to view metrics in Grafana]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "## InfluxDB ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana:** [View Live Dashboard]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+          
+          for plot in reports/plots/*.png; do
+            FILE_NAME=$(basename "$plot")
+            echo "| $FILE_NAME | Generated | \`plots-${{ matrix.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Upload Plot Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plots-${{ matrix.version }}
+          path: bddbench/reports/plots/*.png
+          retention-days: 14
