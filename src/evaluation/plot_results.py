@@ -11,8 +11,6 @@ from urllib.parse import urlparse
 from influxdb_client import InfluxDBClient
 from influxdb_client.client.warnings import MissingPivotFunction
 
-from src.utils import _run_on_sut
-
 warnings.simplefilter("ignore", MissingPivotFunction)
 plt.style.use('bmh')
 
@@ -31,6 +29,21 @@ def to_single_df(raw_data):
     if isinstance(raw_data, list):
         return pd.concat(raw_data, ignore_index=True) if raw_data else pd.DataFrame()
     return raw_data
+
+
+def get_sut_hostname():
+    sut_url = os.getenv("INFLUXDB_SUT_URL")
+    if not sut_url: return None
+    target_ip = urlparse(sut_url).hostname
+    try:
+        result = subprocess.check_output(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", f"nixos@{target_ip}", "hostname"],
+            stderr=subprocess.STDOUT, text=True
+        )
+        return result.strip()
+    except Exception:
+        return None
+
 
 def fetch_data(start, end, measurement, sut_hostname):
     url = os.getenv("INFLUXDB_MAIN_URL")
@@ -152,6 +165,6 @@ if __name__ == "__main__":
     parser.add_argument("--feature", required=True)
     args = parser.parse_args()
 
-    hn = _run_on_sut(['hostname'])
+    hn = get_sut_hostname()
     b_data, r_data = fetch_data(args.start, args.end, args.measurement, hn)
     generate_report(b_data, r_data, args.feature)

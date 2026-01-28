@@ -51,7 +51,7 @@
 
           (pkgs.writeShellScriptBin "run-behave-normal-5-times" ''
             set -e
-            for i in {1..5}; do run-behave-normal; sleep 1; done
+            for i in {1..10}; do run-behave-normal; sleep 1; done
           '')
 
           (pkgs.writeShellScriptBin "run-full-benchmark-suite" ''
