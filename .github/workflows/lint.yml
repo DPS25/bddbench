@@ -1,0 +1,61 @@
+name: Lint Code
+
+# Diese GitHub Action führt automatisch Linting-Checks aus, wenn Code zu main gemergt werden soll.
+# Sie verwendet drei Tools:
+# - Black: Prüft Code-Formatierung (88 Zeichen pro Zeile)
+# - isort: Prüft Import-Sortierung
+# - Flake8: Prüft Code-Qualität und PEP 8-Konformität
+#
+# Der Workflow schlägt fehl, wenn der Code nicht korrekt gelintet ist.
+# Lokal können die Checks mit folgenden Befehlen ausgeführt werden:
+#   pip install -r requirements-dev.txt
+#   black --check .
+#   isort --check-only .
+#   flake8 .
+# Oder automatisch vor jedem Commit mit: pre-commit install
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run Black (code formatting check)
+        run: |
+          black --check --diff .
+
+      - name: Run isort (import sorting check)
+        run: |
+          isort --check-only --diff .
+
+      - name: Run Flake8 (linting)
+        run: |
+          flake8 .
