@@ -1,0 +1,5 @@
+# Development dependencies for linting and code quality
+black==24.10.0
+flake8==7.1.1
+isort==5.13.2
+pre-commit==4.0.1
