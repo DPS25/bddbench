@@ -1,47 +1,17 @@
 import json
 import os
 import re
-import socket
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
 
 from behave import when, then
 
 from src.utils import (
     _run_on_sut,
-    _size_to_bytes,
+    _size_to_bytes, 
     store_sut_benchmark_result,
-    write_json_report,   
 )
-
-
-def _guess_sut_host() -> Optional[str]:
-    """
-    Derive SUT host without requiring context.influxdb.
-
-    Priority:
-      1) INFLUXDB_SUT_URL -> hostname
-      2) SUT_SSH -> host part of user@host
-      3) None
-    """
-    sut_url = (os.getenv("INFLUXDB_SUT_URL") or "").strip()
-    if sut_url:
-        try:
-            host = urlparse(sut_url).hostname
-            if host:
-                return host
-        except Exception:
-            pass
-
-    sut_ssh = (os.getenv("SUT_SSH") or "").strip()
-    if sut_ssh:
-        # "user@host" or "host"
-        host = sut_ssh.split("@")[-1].strip()
-        return host or None
-
-    return None
-
 
 def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"raw": output}
@@ -88,12 +58,7 @@ def _parse_sysbench_memory(output: str) -> Dict[str, Any]:
 
     return result
 
-
-@when(
-    'I run a sysbench memory benchmark with mode "{mode}", access mode "{access_mode}", '
-    'block size "{block_size}", total size "{total_size}", threads {threads:d} and '
-    "time limit {time_limit_s:d} seconds"
-)
+@when('I run a sysbench memory benchmark with mode "{mode}", access mode "{access_mode}", block size "{block_size}", total size "{total_size}", threads {threads:d} and time limit {time_limit_s:d} seconds')
 def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size, threads, time_limit_s):
     if mode not in ("read", "write"):
         raise AssertionError(f"mode must be 'read' or 'write', got: {mode!r}")
@@ -101,8 +66,7 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
         raise AssertionError(f"access_mode must be 'seq' or 'rnd', got: {access_mode!r}")
 
     cmd = [
-        "sysbench",
-        "memory",
+        "sysbench", "memory",
         f"--memory-oper={mode}",
         f"--memory-access-mode={access_mode}",
         f"--memory-block-size={block_size}",
@@ -116,12 +80,9 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
     output = (completed.stdout or "") + (("\n" + completed.stderr) if completed.stderr else "")
     parsed = _parse_sysbench_memory(output)
 
-    sut_host = _guess_sut_host() or socket.gethostname()
-
     context.memory_benchmark = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        # ✅ 不依赖 context.influxdb（CI @memory 跑得过）
-        "host": sut_host,
+        "host": context.influxdb.sut.host,
         "env_name": os.getenv("ENV_NAME"),
         "params": {
             "mode": mode,
@@ -139,29 +100,10 @@ def step_run_sysbench_memory(context, mode, access_mode, block_size, total_size,
 
 @then('I store the memory benchmark result as "{report_path}"')
 def step_store_memory_result(context, report_path):
-    """
-    If Influx init was skipped for this feature (common for @memory),
-    then context.influxdb does not exist. In that case, just write JSON report.
-
-    If Influx is available, keep the existing behavior.
-    """
-    if not hasattr(context, "influxdb"):
-        data = getattr(context, "memory_benchmark", None)
-        if not isinstance(data, dict):
-            raise AssertionError("No memory benchmark found in context (did the When step run?)")
-
-        write_json_report(
-            report_path,
-            data,
-            logger_=None,
-            log_prefix="Stored memory benchmark result to ",
-        )
-        return
-
     store_sut_benchmark_result(
         context,
         report_path=report_path,
         context_attr="memory_benchmark",
         bench_type="memory",
-        measurement="bddbench_memory_result",
+        measurement="bddbench_memory_result"
     )
