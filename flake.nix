@@ -50,15 +50,52 @@
           '')
 
           (pkgs.writeShellScriptBin "run-behave-normal-5-times" ''
-          set -e
-          for i in {1..5}; do run-behave-normal; sleep 1; done
+            set -e
+            for i in {1..10}; do run-behave-normal; sleep 1; done
           '')
 
+          (pkgs.writeShellScriptBin "run-full-benchmark-suite" ''
+            set -e
+            mkdir -p reports/plots
+            rm -f reports/plots/*
+            export PYTHONPATH=.
+            # Usage: run_block <tag> <feature_name> <measurement_name>
+            run_block() {
+              local tag="$1"
+              local feature="$2"
+              local measurement="$3"
+
+              echo ">>> Starting Block: ''${feature} (''${measurement})"
+              local start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+              for i in {1..5}; do
+                behave -t="''${tag}" -f progress3 --no-skipped --no-snippets --no-summary
+              done
+
+              local end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+              # Save the plot inside reports/plots/ using the feature name
+              python src/evaluation/plot_results.py \
+                --start "''${start_time}" \
+                --end "''${end_time}" \
+                --measurement "''${measurement}" \
+                --feature "reports/plots/''${feature}"
+            }
+
+            # --- RUN ALL BENCHMARKS ---
+            run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
+            run_block "write and normal and multibucket" "write_multi" "bddbench_multi_write_result"
+            run_block "query and normal" "query_perf" "bddbench_query_result"
+            run_block "delete" "delete_perf" "bddbench_delete_result"
+            run_block "me or crud" "user_api_perf" "bddbench_user_result"
+
+            echo "🏁 Suite complete. Each feature has one plot containing all its scenarios."
+          '')
 
           (pkgs.writeShellScriptBin "run-everything-5-times" ''
-          set -e
-          run-behave-host-benchmarks-5-times
-          run-behave-normal-5-times
+            set -e
+            run-behave-host-benchmarks-5-times
+            run-behave-normal-5-times
           '')
 
           (pkgs.writeShellScriptBin "run-behave-host-benchmarks-5-times" ''
@@ -67,7 +104,6 @@
             for i in {1..5}; do behave -t="storage" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
             for i in {1..5}; do behave -t="cpu" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
           '')
-
 
         ];
 
