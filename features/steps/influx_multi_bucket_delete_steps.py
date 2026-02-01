@@ -10,6 +10,7 @@ from behave.runner import Context
 from influxdb_client import Point
 from influxdb_client.rest import ApiException
 
+
 from src.utils import (
     generate_base_point,
     get_main_influx_write_api,
@@ -17,6 +18,7 @@ from src.utils import (
     scenario_id_from_outfile,
     write_json_report,
     write_to_influx,
+    load_json_file
 )
 
 logger = logging.getLogger("bddbench.influx_multi_bucket_delete_steps")
@@ -32,17 +34,6 @@ def _truthy(value: object) -> bool:
         return value
     s = str(value).strip().lower()
     return s in {"1", "true", "t", "yes", "y", "on"}
-
-
-def _load_json_file(path_str: str) -> dict:
-    fp = Path(path_str)
-    if not fp.exists():
-        raise FileNotFoundError(
-            f"Missing required file: {fp}. "
-            f"Run multi-bucket write first to generate it."
-        )
-    with fp.open("r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def _extract_multi_write_meta(payload: dict, infile: str) -> Dict[str, Any]:
@@ -282,7 +273,7 @@ def _export_multi_delete_result_to_main_influx(
 
 @given('I load the multi-bucket write benchmark context from "{infile}"')
 def step_load_multi_write_context(context: Context, infile: str) -> None:
-    payload = _load_json_file(infile)
+    payload = load_json_file(infile)
     meta = _extract_multi_write_meta(payload, infile)
     context.multi_write_benchmark_meta = meta
     logger.info(
