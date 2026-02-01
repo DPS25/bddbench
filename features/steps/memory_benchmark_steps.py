@@ -12,7 +12,7 @@ from src.utils import (
     _run_on_sut,
     _size_to_bytes,
     store_sut_benchmark_result,
-    write_json_report,   # ✅ 与 network benchmark 一样的写法
+    write_json_report,   
 )
 
 
