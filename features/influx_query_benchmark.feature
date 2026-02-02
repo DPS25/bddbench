@@ -1,4 +1,4 @@
-@query 
+@query @singlebucket
 Feature: InfluxDB v2 query benchmark (/api/v2/query)
   In order to evaluate query performance characteristics 
   As a test engineer
