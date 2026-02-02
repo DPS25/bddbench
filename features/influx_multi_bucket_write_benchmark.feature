@@ -11,6 +11,7 @@ Feature: InfluxDB v2 multi-bucket write benchmark (/api/v2/write)
   Scenario Outline: multi-bucket write benchmark run (duration based)
     When I run a multi-bucket write benchmark on base measurement "<measurement>" with bucket prefix "<bucket_prefix>" creating <bucket_count> buckets, batch size <batch_size>, <parallel_writers> parallel writers per bucket, compression "<compression>", timestamp precision "<precision>", point complexity "<point_complexity>", tag cardinality <tag_cardinality> and time ordering "<time_ordering>" for <duration_s> seconds
     Then I store the multi-bucket write benchmark result as "reports/multi-write-<id>.json"
+    And I store the multi-bucket write benchmark context as "reports/multi-write-context-<id>.json"
 
     @normal
     Examples:

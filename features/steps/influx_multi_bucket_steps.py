@@ -4,6 +4,9 @@ import time
 import statistics
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any
+import json
+from pathlib import Path
+
 
 from behave import when, then
 from behave.runner import Context
@@ -406,3 +409,22 @@ def step_store_multi_bucket_write_result(context: Context, outfile: str):
     )
 
     _export_multi_write_result_to_main_influx(result, outfile, context)
+
+
+@then('I store the multi-bucket write benchmark context as "{outfile}"')
+def step_store_multi_bucket_write_context(context: Context, outfile: str) -> None:
+    meta: Dict[str, Any] = getattr(context, "multi_write_benchmark_meta", None)
+    if not isinstance(meta, dict):
+        raise AssertionError("No multi write benchmark meta present on context.multi_write_benchmark_meta")
+
+    payload: Dict[str, Any] = {
+        "multi_write_benchmark_meta": meta,
+        "created_at_epoch_s": time.time(),
+    }
+
+    out_path = Path(outfile)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("storing multi-bucket write benchmark context: %s", out_path)
+
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)

@@ -405,3 +405,14 @@ def write_json_report(
             logger_.info("%s%s", log_prefix, outfile)
         else:
             logger_.info("Stored JSON report to %s", outfile)
+
+
+def load_json_file(path_str: str) -> dict:
+    fp = Path(path_str)
+    if not fp.exists():
+        raise FileNotFoundError(
+            f"Missing required file: {fp}. "
+            f"Run multi-bucket write first to generate it."
+        )
+    with fp.open("r", encoding="utf-8") as f:
+        return json.load(f)
