@@ -39,4 +39,3 @@ jobs:
           
           echo "##  Host SUT Performance Baseline" >> $GITHUB_STEP_SUMMARY
           echo "**Grafana:** [View Host Metrics]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
-g
