@@ -14,14 +14,19 @@ Feature: InfluxDB v2 write benchmark (/api/v2/write)
 
     @normal
     Examples:
-      | id    | measurement          | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
+      | id    | measurement           | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
       | smoke | bddbench_single_write | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10      |
       | load  | bddbench_single_write | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 10      |
-
+      | stress| bddbench_single_write | 1000       | 8                | none        | ns        | high             | 2000            | in_order      | 50      |
+      | spike | bddbench_single_write | 250        | 32               | none        | ns        | medium           | 100             | in_order      | 3       |
+      | soak  | bddbench_single_write | 250        | 4                | none        | ns        | medium           | 100             | in_order      | 200     |
 
     @experimental
     Examples:
-      | id    | measurement     | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
-      | smoke | bddbench_single_write | 250        | 2                | gzip        | ns        | medium           | 100             | out_of_order  | 5       |
-      | load  | bddbench_single_write | 1000       | 4                | gzip        | ns        | high             | 1000            | out_of_order  | 50      |
-    
+      | id          | measurement           | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
+      | smoke       | bddbench_single_write | 250        | 2                | gzip        | ns        | medium           | 100             | out_of_order  | 5       |
+      | load        | bddbench_single_write | 1000       | 4                | gzip        | ns        | high             | 1000            | out_of_order  | 50      |
+      | stress      | bddbench_single_write | 1500       | 12               | gzip        | ns        | high             | 5000            | out_of_order  | 50      |
+      | spike       | bddbench_single_write | 250        | 64               | gzip        | ns        | medium           | 200             | out_of_order  | 3       |
+      | soak        | bddbench_single_write | 250        | 4                | gzip        | ns        | medium           | 200             | out_of_order  | 200     |
+      | breakpoint  | bddbench_single_write | 500        | 32               | none        | ns        | high             | 10000           | in_order      | 20      |
