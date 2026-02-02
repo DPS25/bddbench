@@ -1,10 +1,7 @@
 {
-  "default": false,
-  "rules": {
-    "no-tabs": "on",
-    "no-trailing-spaces": "on",
-    "new-line-at-eof": "on",
-    "no-multiple-empty-lines": "on",
-    "no-empty-file": "on"
-  }
+  "no-tabs": "on",
+  "no-trailing-spaces": "on",
+  "new-line-at-eof": ["on", "yes"],
+  "no-multiple-empty-lines": "on",
+  "no-empty-file": "on"
 }
