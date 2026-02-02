@@ -16,3 +16,16 @@ Feature: InfluxDB v2 multi-bucket query benchmark (/api/v2/query)
       | id    | measurement          | time_range | query_type | result_size | bucket_prefix     | bucket_count | concurrent_clients | output_format | compression |
       | smoke | bddbench_multi_write | 10s        | filter     | small       | bddbench_mb_smoke | 3            | 2                  | csv           | none        |
       | load  | bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_load  | 5            | 2                  | csv           | gzip        |
+      | stress| bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_stress| 10           | 20                 | csv           | gzip        |
+      | spike | bddbench_multi_write | 5m         | filter     | small       | bddbench_mb_spike | 5            | 100                | csv           | none        |
+      | soak  | bddbench_multi_write | 24h        | aggregate  | large       | bddbench_mb_soak  | 5            | 5                  | csv           | gzip        |
+
+    @experimental
+    Examples:
+      | id        | measurement           | time_range | query_type | result_size | bucket_prefix           | bucket_count | concurrent_clients | output_format | compression |
+      | smoke     | bddbench_multi_write  | 10s        | filter     | small       | bddbench_mb_smoke_exp   | 5            | 5                  | csv           | gzip        |
+      | load      | bddbench_multi_write  | 1h         | aggregate  | large       | bddbench_mb_load_exp    | 10           | 10                 | csv           | gzip        |
+      | stress    | bddbench_multi_write  | 1h         | aggregate  | large       | bddbench_mb_stress_exp  | 20           | 50                 | csv           | gzip        |
+      | spike     | bddbench_multi_write  | 5m         | filter     | small       | bddbench_mb_spike_exp   | 10           | 200                | csv           | none        |
+      | soak      | bddbench_multi_write  | 7d         | aggregate  | large       | bddbench_mb_soak_exp    | 10           | 20                 | csv           | gzip        |
+      | breakpoint| bddbench_multi_write  | 10m        | filter     | small       | bddbench_mb_breakpoint  | 10           | 300                | csv           | none        |
