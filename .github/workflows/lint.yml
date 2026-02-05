@@ -1,18 +1,18 @@
 name: Lint Code
 
-# Diese GitHub Action führt automatisch Linting-Checks aus, wenn Code zu main gemergt werden soll.
-# Sie verwendet drei Tools:
-# - Black: Prüft Code-Formatierung (88 Zeichen pro Zeile)
-# - isort: Prüft Import-Sortierung
-# - Flake8: Prüft Code-Qualität und PEP 8-Konformität
+# This GitHub Action automatically runs linting checks when code is merged to main.
+# It uses three tools:
+# - Black: Checks code formatting (88 characters per line)
+# - isort: Checks import sorting
+# - Flake8: Checks code quality and PEP 8 conformity
 #
-# Der Workflow schlägt fehl, wenn der Code nicht korrekt gelintet ist.
-# Lokal können die Checks mit folgenden Befehlen ausgeführt werden:
-#   pip install -r requirements-dev.txt
+# The workflow fails if the code is not properly linted.
+# Locally, checks can be run with the following commands:
+#   uv pip install -r requirements-dev.txt
 #   black --check .
 #   isort --check-only .
 #   flake8 .
-# Oder automatisch vor jedem Commit mit: pre-commit install
+# Or automatically before each commit with: pre-commit install
 
 on:
   pull_request:
@@ -35,18 +35,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          enable-cache: true
+          cache-dependency-glob: "**/requirements-dev.txt"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          uv pip install --system -r requirements-dev.txt
 
       - name: Run Black (code formatting check)
         run: |

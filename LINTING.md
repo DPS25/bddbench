@@ -1,36 +1,36 @@
 # Linting Setup
 
-Hab für das Projekt Linting eingerichtet, damit der Code einheitlich bleibt und wir nicht bei jedem PR über Formatierung diskutieren müssen.
+Linting has been set up for the project to keep code consistent and avoid formatting issues in every PR.
 
-## Was macht das?
+## What does it do?
 
-Wir nutzen drei Tools:
-- **Black** - formatiert den Code automatisch (88 Zeichen pro Zeile)
-- **isort** - sortiert die Imports ordentlich
-- **Flake8** - checkt ob der Code sauber ist (keine ungenutzten Variablen, etc.)
+We use three tools:
+- **Black** - automatically formats code (88 characters per line)
+- **isort** - sorts imports properly
+- **Flake8** - checks if code is clean (no unused variables, etc.)
 
-## Setup (einmalig)
+## Setup (one-time)
 
 ```bash
-pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt
 ```
 
-## Wie benutzt man das?
+## How to use it?
 
-### Code automatisch formatieren
+### Automatically format code
 
-Einfach vor dem Commit laufen lassen:
+Simply run before committing:
 
 ```bash
 black .
 isort .
 ```
 
-Das fixt automatisch alles.
+This automatically fixes everything.
 
-### Nur checken ohne zu ändern
+### Only check without changing
 
-Wenn ihr nur schauen wollt was nicht passt:
+If you just want to see what doesn't match:
 
 ```bash
 black --check .
@@ -38,31 +38,31 @@ isort --check-only .
 flake8 .
 ```
 
-### Pre-commit Hooks (empfohlen!)
+### Pre-commit Hooks (recommended!)
 
-Damit ihr nicht vergessen könnt zu linten:
+So you don't forget to lint:
 
 ```bash
-pip install pre-commit
+uv pip install pre-commit
 pre-commit install
 ```
 
-Jetzt laufen die Checks automatisch bei jedem `git commit`. Wenn was nicht passt, wird der Commit blockiert und ihr könnt es fixen.
+Now the checks run automatically on every `git commit`. If something doesn't match, the commit is blocked and you can fix it.
 
-Um alle Files auf einmal zu checken:
+To check all files at once:
 ```bash
 pre-commit run --all-files
 ```
 
 ## GitHub Action
 
-Hab ne GitHub Action eingerichtet die bei jedem PR zu main läuft. Wenn der Code nicht gelintet ist, wird der PR blockiert. Also bitte vorher lokal laufen lassen!
+A GitHub Action has been set up that runs on every PR to main. If the code is not linted, the PR will be blocked. So please run locally first!
 
-Die Action ist in `.github/workflows/lint.yml`
+The action is in `.github/workflows/lint.yml`
 
 ## Config Files
 
-Falls ihr was anpassen wollt:
-- `.flake8` - Flake8 Settings
-- `pyproject.toml` - Black & isort Settings
-- `.pre-commit-config.yaml` - Pre-commit Hook Config
+If you want to adjust something:
+- `.flake8` - Flake8 settings
+- `pyproject.toml` - Black & isort settings
+- `.pre-commit-config.yaml` - Pre-commit hook config
