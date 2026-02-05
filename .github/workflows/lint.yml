@@ -1,0 +1,58 @@
+name: Lint Code
+
+# This GitHub Action automatically runs linting checks when code is merged to main.
+# It uses three tools:
+# - Black: Checks code formatting (88 characters per line)
+# - isort: Checks import sorting
+# - Flake8: Checks code quality and PEP 8 conformity
+#
+# The workflow fails if the code is not properly linted.
+# Locally, checks can be run with the following commands:
+#   uv pip install -r requirements-dev.txt
+#   black --check .
+#   isort --check-only .
+#   flake8 .
+# Or automatically before each commit with: pre-commit install
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/requirements-dev.txt"
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements-dev.txt
+
+      - name: Run Black (code formatting check)
+        run: |
+          black --check --diff .
+
+      - name: Run isort (import sorting check)
+        run: |
+          isort --check-only --diff .
+
+      - name: Run Flake8 (linting)
+        run: |
+          flake8 .
