@@ -1,21 +1,7 @@
 [reporting]
 disable = [
-  "W101",
-  "W102",
-  "W103",
-  "W104",
-  "W105",
-  "W106",
-  "C101",
-  "C102",
-  "C103",
-  "R101",
-  "R201",
-  "R202",
-  "W301",
-  "C301",
-  "C302",
-  "R301",
-  "C401",
-  "C402",
+  "E001"            # File could not be parsed: {error_msg}
+  "E101"            # ‘{parameter}’ is not defined in the Examples section
+  "R101"            # Parameter ‘{parameter}’ is not used
 ]
+ 
