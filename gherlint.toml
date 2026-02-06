@@ -22,8 +22,6 @@ disable = [
   "C402",
 ]
 
-]
-
 #nur die drei checks werden durchgeführt
  
 #"E001"            File could not be parsed: {error_msg}
