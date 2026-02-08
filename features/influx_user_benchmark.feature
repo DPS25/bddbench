@@ -16,7 +16,20 @@ Feature: InfluxDB v2 User API benchmark (/api/v2/me, /api/v2/users)
     Examples:
       | id    | concurrent_clients | duration_s |
       | smoke | 1                  | 5          |
-      | load | 10                 | 10         |
+      | load  | 5                  | 10         |
+      | stress| 20                 | 15         |
+      | spike | 50                 | 5          |
+      | soak  | 10                 | 300        |
+
+    @experimental
+    Examples:
+      | id        | concurrent_clients | duration_s |
+      | smoke     | 2                  | 5          |
+      | load      | 20                 | 10         |
+      | stress    | 100                | 15         |
+      | spike     | 400                | 5          |
+      | soak      | 50                 | 600        |
+      | breakpoint| 800                | 10         |
 
   @crud
   Scenario Outline: Benchmark User CRUD lifecycle (Create/Update/Retrieve/Delete)
@@ -26,7 +39,19 @@ Feature: InfluxDB v2 User API benchmark (/api/v2/me, /api/v2/users)
     @normal
     Examples:
       | id          | username_complexity | password_complexity | concurrent_clients | iterations |
-      | smoke | low                 | low                 | 1                  | 10         |
-      | load  | high                | high                | 4                  | 50         |
+      | smoke       | low                 | low                 | 1                  | 10         |
+      | load        | high                | high                | 4                  | 50         |
+      | stress      | high                | high                | 6                  | 100        |
+      | spike       | medium              | medium              | 15                 | 20         |
+      | soak        | medium              | medium              | 2                  | 500        |
+
+    @experimental
+    Examples:
+      | id        | username_complexity | password_complexity | concurrent_clients | iterations |
+      | load      | high                | high                | 8                  | 100        |
+      | stress    | high                | high                | 20                 | 200        |
+      | spike     | high                | high                | 100                | 50         |
+      | soak      | high                | high                | 5                  | 1000       |
+      | breakpoint| high                | high                | 200                | 50         |
 
 

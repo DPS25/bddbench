@@ -1,4 +1,4 @@
-@query
+@query @singlebucket
 Feature: InfluxDB v2 query benchmark (/api/v2/query)
   In order to evaluate query performance characteristics 
   As a test engineer
@@ -16,4 +16,17 @@ Feature: InfluxDB v2 query benchmark (/api/v2/query)
     Examples:
       | id    | measurement           | time_range | query_type | result_size | concurrent_clients | output_format | compression |
       | smoke | bddbench_single_query | 10s        | filter     | small       | 5                  | csv           | none        |
-      | load  | bddbench_single_query | 1h         | aggregate  | large       | 5                  | csv           | gzip        |
+      | load  | bddbench_single_query | 1h         | aggregate  | large       | 10                 | csv           | gzip        |
+      | stress| bddbench_single_query | 1h         | aggregate  | large       | 20                 | csv           | gzip        |
+      | spike | bddbench_single_query | 5m         | filter     | small       | 50                 | csv           | gzip        |
+      | soak  | bddbench_single_query | 24h        | aggregate  | large       | 10                 | csv           | gzip        |
+
+    @experimental
+    Examples:
+      | id        | measurement           | time_range | query_type | result_size | concurrent_clients | output_format | compression |
+      | smoke     | bddbench_single_query | 10s        | filter     | small       | 5                  | csv           | gzip        |
+      | load      | bddbench_single_query | 1h         | aggregate  | large       | 10                 | csv           | gzip        |
+      | stress    | bddbench_single_query | 1h         | aggregate  | large       | 100                | csv           | gzip        |
+      | spike     | bddbench_single_query | 5m         | filter     | small       | 200                | csv           | gzip        |
+      | soak      | bddbench_single_query | 7d         | aggregate  | large       | 20                 | csv           | gzip        |
+      | breakpoint| bddbench_single_query | 10m        | filter     | small       | 300                | csv           | gzip        |
