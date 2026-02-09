@@ -19,8 +19,8 @@ try:
 except Exception:  # pragma: no cover
     from influxdb_client.domain.user import User  # type: ignore
 
-from src.measurements.UserPerformancePoint import UserPerformancePoint
 from src.utils import (
+    generate_base_point,  # ✅ 关键：用它生成 Point
     get_main_influx_write_api,
     main_influx_is_configured,
     scenario_id_from_outfile,
@@ -439,8 +439,8 @@ def _write_points_chunked(write_api, bucket: str, org: str, points: List[Point],
 def _export_to_main_influx(context, outfile: str) -> None:
     """
     Writes BOTH:
-      (1) summary point via UserPerformancePoint (existing behavior)
-      (2) raw per-call points to MAIN influx (Bug Report requirement)
+      (1) summary point via generate_base_point() + extend (to match team convention)
+      (2) raw per-call points to MAIN influx
 
     Controlled by INFLUXDB_EXPORT_STRICT:
       - "1"/"true"/"yes": export failures raise (fail scenario)
@@ -487,23 +487,29 @@ def _export_to_main_influx(context, outfile: str) -> None:
 
     raw_points: List[Point] = []
     for m in metrics:
-        raw_points.append(
-            Point("user_api_op_latency")
-            .tag("scenario_id", str(scenario_id))
-            .tag("feature_name", os.path.basename(outfile))
-            .tag("sut", str(meta_last2.get("sut_url", "unknown")))
-            .tag("test_type", "user_benchmark")
-            .tag("operation", str(meta_last2.get("operation", "unknown")))  # "me" / "lifecycle_crud"
-            .tag("op", str(m.op))  # create/update_password/update/find/delete/me
-            .tag("username_complexity", str(meta_last2.get("username_complexity", "none")))
-            .tag("password_complexity", str(meta_last2.get("password_complexity", "none")))
-            .tag("concurrency", str(meta_last2.get("concurrency", 1)))
-            .tag("run_uuid", run_uuid)
-            .field("latency_ms", float(m.latency_s) * 1000.0)
-            .field("ok", bool(m.ok))
-            .field("status_code", int(m.status_code))
-            .time(m.ts_ns, WritePrecision.NS)
-        )
+        # ✅ team requirement: generate_base_point() then extend
+        p = generate_base_point(context=context, measurement="user_api_op_latency")
+
+        # keep existing dimensions (explicit to avoid relying on base defaults)
+        p.tag("scenario_id", str(scenario_id))
+        p.tag("feature_name", os.path.basename(outfile))
+        p.tag("sut", str(meta_last2.get("sut_url", "unknown")))
+        p.tag("test_type", "user_benchmark")
+        p.tag("operation", str(meta_last2.get("operation", "unknown")))  # me / lifecycle_crud
+        p.tag("op", str(m.op))  # create/update_password/update/find/delete/me
+        p.tag("username_complexity", str(meta_last2.get("username_complexity", "none")))
+        p.tag("password_complexity", str(meta_last2.get("password_complexity", "none")))
+        p.tag("concurrency", str(meta_last2.get("concurrency", 1)))
+        p.tag("run_uuid", run_uuid)
+
+        p.field("latency_ms", float(m.latency_s) * 1000.0)
+        p.field("ok", bool(m.ok))
+        p.field("status_code", int(m.status_code))
+
+        # raw point uses real sampling time (ns)
+        p.time(m.ts_ns, WritePrecision.NS)
+
+        raw_points.append(p)
 
     try:
         if raw_points:
@@ -516,36 +522,42 @@ def _export_to_main_influx(context, outfile: str) -> None:
         logger.error(msg)
 
     # ---------------- (1) Summary export ----------------
-    point_data = UserPerformancePoint(
-        run_uuid=run_uuid,
-        feature_name=os.path.basename(outfile),
-        sut=str(meta.get("sut_url", "unknown")),
-        test_type="user_benchmark",
-        time=now,
-        scenario_id=scenario_id,
-        operation=str(meta.get("operation", "unknown")),
-        username_complexity=str(meta.get("username_complexity", meta.get("complexity", "none"))),
-        password_complexity=str(meta.get("password_complexity", "none")),
-        concurrency=int(meta.get("concurrency", 1)),
-        sut_org=str(meta.get("sut_org", "")),
-        sut_bucket=str(meta.get("sut_bucket", "")),
-        sut_influx_url=str(meta.get("sut_url", "")),
-        throughput=float(data["throughput"]),
-        latency_avg_ms=float(stats["avg"]) * 1000.0,
-        latency_min_ms=float(stats["min"]) * 1000.0,
-        latency_max_ms=float(stats["max"]) * 1000.0,
-        error_count=int(data["error_count"]),
-        extra_metrics={
-            "total_ops": float(data["total_ops"]),
-            "total_duration_s": float(meta.get("total_duration_s", 0.0) or 0.0),
-        },
-    )
+    # IMPORTANT: historical measurement for user summary was "UserPerformancePoint"
+    # because BasePoint uses Point(self.__class__.__name__) in to_point()
+    SUMMARY_MEASUREMENT = "UserPerformancePoint"
+
+    # ✅ team requirement: generate_base_point() then extend
+    p = generate_base_point(context=context, measurement=SUMMARY_MEASUREMENT)
+
+    # Tags: align with UserPerformancePoint.to_point()
+    p.tag("scenario_id", str(scenario_id))
+    p.tag("operation", str(meta.get("operation", "unknown")))
+    p.tag("username_complexity", str(meta.get("username_complexity", meta.get("complexity", "none"))))
+    p.tag("password_complexity", str(meta.get("password_complexity", "none")))
+    p.tag("sut_influx_url", str(meta.get("sut_url", "")))
+    p.tag("sut_org", str(meta.get("sut_org", "")))
+    p.tag("sut_bucket", str(meta.get("sut_bucket", "")))
+    p.tag("concurrency", str(int(meta.get("concurrency", 1))))
+    p.tag("run_uuid", run_uuid)
+
+    # Fields: align with UserPerformancePoint.to_point()
+    p.field("ops_per_sec", float(data["throughput"]))
+    p.field("latency_avg_ms", float(stats["avg"]) * 1000.0)
+    p.field("latency_min_ms", float(stats["min"]) * 1000.0)
+    p.field("latency_max_ms", float(stats["max"]) * 1000.0)
+    p.field("error_count", int(data["error_count"]))
+
+    # extra_metrics we used previously
+    p.field("total_ops", float(data["total_ops"]))
+    p.field("total_duration_s", float(meta.get("total_duration_s", 0.0) or 0.0))
+
+    p.time(now, WritePrecision.NS)
 
     try:
         write_api.write(
             bucket=main.bucket,
             org=main.org,
-            record=point_data.to_point(),
+            record=p,
         )
         logger.info("Exported user SUMMARY metrics to Main InfluxDB")
     except Exception as e:
