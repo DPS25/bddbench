@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+
       - name: Lint feature files
-        run: uvx --from 'gherlint==0.5.0' gherlint lint features
+        run: uv tool run gherlint@0.5.0 lint features
