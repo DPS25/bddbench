@@ -1,0 +1,27 @@
+name: Gherkin Lint
+
+on:
+  pull_request:
+    paths:
+      - "features/**/*.feature"
+      - "gherlint.toml"
+      - ".github/workflows/gherlint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "features/**/*.feature"
+      - "gherlint.toml"
+      - ".github/workflows/gherlint.yml"
+
+jobs:
+  gherlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Lint feature files
+        run: uv tool run gherlint@0.5.0 lint features
