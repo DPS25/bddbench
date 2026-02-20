@@ -46,20 +46,20 @@ jobs:
       - name: Deploy Influx ${{ matrix.version }}
         working-directory: ./nix
         run: |
-          ssh dsp25-benedikt "sudo rm -rf /var/lib/influxdb2/"
+          ssh dsp25-johann "sudo rm -rf /var/lib/influxdb2/"
           nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
-            --target-host dsp25-benedikt --build-host "" --sudo
+            --target-host dsp25-johann --build-host "" --sudo
 
       - name: Run Full Benchmark Suite
         working-directory: ./bddbench
         run: |
           START_TIME=$(date +%s%3N)
-          export ENV_NAME=benedikt_dsp25
+          export ENV_NAME=johann_dsp25
           nix develop --command run-full-benchmark-suite
           END_TIME=$(date +%s%3N)
           
           BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
-          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=\$__all&timezone=browser"
+          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-johann&var-scenario_id=\$__all&timezone=browser"
           FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
           
           echo "## InfluxDB ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
