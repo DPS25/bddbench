@@ -40,6 +40,7 @@
           pkgs.zlib
           pkgs.sysbench
           pkgs.fio
+          pkgs.mutagen
 
           (pkgs.writeShellScriptBin "run-behave-normal" ''
             set -e
@@ -54,42 +55,65 @@
             for i in {1..10}; do run-behave-normal; sleep 1; done
           '')
 
+          # ... inside buildInputs ...
+
           (pkgs.writeShellScriptBin "run-full-benchmark-suite" ''
             set -e
             mkdir -p reports/plots
-            rm -f reports/plots/*
+
+            # NEW: Record the global start time for this version's run
+            date -u +"%Y-%m-%dT%H:%M:%SZ" >> .suite_start_times
+
             export PYTHONPATH=.
-            # Usage: run_block <tag> <feature_name> <measurement_name>
             run_block() {
-              local tag="$1"
-              local feature="$2"
-              local measurement="$3"
-
-              echo ">>> Starting Block: ''${feature} (''${measurement})"
+              local tag="$1"; local feature="$2"; local measurement="$3"
               local start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
               for i in {1..5}; do
-                behave -t="''${tag}" -f progress3 --no-skipped --no-snippets --no-summary
+                behave -t="$tag" -f progress3 --no-skipped --no-snippets --no-summary
               done
-
               local end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-              # Save the plot inside reports/plots/ using the feature name
-              python src/evaluation/plot_results.py \
-                --start "''${start_time}" \
-                --end "''${end_time}" \
-                --measurement "''${measurement}" \
-                --feature "reports/plots/''${feature}"
+              python src/evaluation/plot_results.py --start "$start_time" --end "$end_time" \
+                --measurement "$measurement" --feature "reports/plots/$feature"
             }
 
-            # --- RUN ALL BENCHMARKS ---
             run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
             run_block "write and normal and multibucket" "write_multi" "bddbench_multi_write_result"
             run_block "query and normal" "query_perf" "bddbench_query_result"
-            run_block "delete" "delete_perf" "bddbench_delete_result"
-            run_block "me or crud" "user_api_perf" "bddbench_user_result"
 
-            echo "🏁 Suite complete. Each feature has one plot containing all its scenarios."
+            # NEW: Record the global end time
+            date -u +"%Y-%m-%dT%H:%M:%SZ" >> .suite_end_times
+          '')
+
+          (pkgs.writeShellScriptBin "run-comparison-report" ''
+            set -e
+            if [ ! -f .suite_start_times ]; then
+              echo "❌ No timestamp logs found. Run benchmarks first or check .suite_start_times"
+              exit 1
+            fi
+
+            GLOBAL_START=$(sort .suite_start_times | head -n 1)
+            GLOBAL_END=$(sort .suite_end_times | tail -n 1)
+
+            mkdir -p reports/plots/comparisons
+
+            # Format: measurement:field_name:file_label
+            # Note: query results use 'total_avg_s', not 'latency_avg_s'
+            KPI_LIST=(
+              "bddbench_write_result:throughput_points_per_s:write_throughput"
+              "bddbench_query_result:total_avg_s:query_latency"
+              "bddbench_delete_result:total_duration_s:delete_performance"
+            )
+
+            for entry in "''${KPI_LIST[@]}"; do
+              IFS=":" read -r measurement kpi label <<< "$entry"
+              echo "📊 Generating Comparison for $label ($kpi)..."
+              python src/evaluation/plot_comparison.py \
+                --start "$GLOBAL_START" \
+                --end "$GLOBAL_END" \
+                --measurement "$measurement" \
+                --kpi "$kpi" \
+                --feature "reports/plots/comparisons/$label"
+            done
           '')
 
           (pkgs.writeShellScriptBin "run-everything-5-times" ''
