@@ -55,6 +55,7 @@ jobs:
         run: |
           START_TIME=$(date +%s%3N)
           export ENV_NAME=johann_dsp25
+          # This command appends timestamps to .suite_start_times and .suite_end_times
           nix develop --command run-full-benchmark-suite
           END_TIME=$(date +%s%3N)
           
@@ -64,42 +65,49 @@ jobs:
           
           echo "## InfluxDB ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
           echo "**Grafana:** [View Live Dashboard]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
-          
-          for plot in reports/plots/*.png; do
-            FILE_NAME=$(basename "$plot")
-            echo "| $FILE_NAME | Generated | \`plots-${{ matrix.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          done
 
-      - name: Upload Plot Artifacts
+      - name: Upload Local Plots and Timestamps
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: plots-${{ matrix.version }}
-          path: bddbench/reports/plots/*.png
-          retention-days: 14
+          name: bench-data-${{ matrix.version }}
+          path: |
+            bddbench/reports/plots/*.png
+            bddbench/.suite_*
+          retention-days: 1
+
+  comparison_report:
+    needs: benchmarking
+    runs-on: dsp25-main-influx
+    steps:
+      - name: Checkout bddbench
+        uses: actions/checkout@v4
+
+      - name: Download All Benchmarking Data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bench-data-*
+          merge-multiple: true
 
       - name: Generate Cross-Version Comparison
         run: |
-          # Define a lookback window to capture all matrix runs
-          # Since matrix is max-parallel: 1, 4 hours is usually sufficient
-          GLOBAL_START=$(date -u -d "4 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
-          GLOBAL_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
           export ENV_NAME=johann_dsp25
-
+          
           echo "## 📊 Regression Comparison Summary" >> $GITHUB_STEP_SUMMARY
 
-          # Run the comparison command from the flake
+          # run-comparison-report now uses the merged .suite_* files to get the exact window
           nix develop --command run-comparison-report
 
-          # Add the comparison plots to the GitHub Summary
-          for plot in reports/plots/comparisons/*.png; do
-            FILE_NAME=$(basename "$plot")
-            echo "### $FILE_NAME" >> $GITHUB_STEP_SUMMARY
-            echo "| Metric | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-            echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-            echo "| $FILE_NAME | ✅ Comparison Generated | \`comparison-plots\` |" >> $GITHUB_STEP_SUMMARY
-          done
+          # Append the comparison plots to the Summary
+          if [ -d reports/plots/comparisons ]; then
+            for plot in reports/plots/comparisons/*.png; do
+              FILE_NAME=$(basename "$plot")
+              echo "### $FILE_NAME" >> $GITHUB_STEP_SUMMARY
+              echo "| Metric | Status |" >> $GITHUB_STEP_SUMMARY
+              echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+              echo "| $FILE_NAME | ✅ Comparison Generated |" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
 
       - name: Upload Comparison Artifacts
         uses: actions/upload-artifact@v4
