@@ -93,7 +93,7 @@ jobs:
           GLOBAL_START=$(date -u -d "4 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
           GLOBAL_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           
-          export ENV_NAME=benedikt_dsp25
+          export ENV_NAME=johann_dsp25
           
           echo "## 📊 Regression Comparison Summary" >> $GITHUB_STEP_SUMMARY
           
