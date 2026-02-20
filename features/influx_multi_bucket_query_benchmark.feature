@@ -15,10 +15,10 @@ Feature: InfluxDB v2 multi-bucket query benchmark (/api/v2/query)
     Examples:
       | id    | measurement          | time_range | query_type | result_size | bucket_prefix     | bucket_count | concurrent_clients | output_format | compression |
       | smoke | bddbench_multi_write | 10s        | filter     | small       | bddbench_mb_smoke | 3            | 2                  | csv           | none        |
-      | load  | bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_load  | 5            | 2                  | csv           | gzip        |
-      | stress| bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_stress| 8            | 3                  | csv           | gzip        |
-      | spike | bddbench_multi_write | 5m         | filter     | small       | bddbench_mb_spike | 5            | 5                  | csv           | none        |
-      | soak  | bddbench_multi_write | 24h        | aggregate  | large       | bddbench_mb_soak  | 5            | 5                  | csv           | gzip        |
+      | load  | bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_load  | 3            | 2                  | csv           | gzip        |
+      | stress| bddbench_multi_write | 1h         | aggregate  | large       | bddbench_mb_stress| 5            | 3                  | csv           | gzip        |
+      | spike | bddbench_multi_write | 5m         | filter     | small       | bddbench_mb_spike | 3            | 5                  | csv           | none        |
+      | soak  | bddbench_multi_write | 24h        | aggregate  | large       | bddbench_mb_soak  | 3            | 3                  | csv           | gzip        |
 
     @experimental
     Examples:
