@@ -78,28 +78,20 @@ jobs:
           path: bddbench/reports/plots/*.png
           retention-days: 14
 
-  comparison_report:
-    needs: benchmarking
-    if: always() && needs.benchmarking.result == 'success'
-    runs-on: dsp25-main-influx
-    steps:
-      - name: Checkout bddbench
-        uses: actions/checkout@v4
-
       - name: Generate Cross-Version Comparison
         run: |
           # Define a lookback window to capture all matrix runs
           # Since matrix is max-parallel: 1, 4 hours is usually sufficient
           GLOBAL_START=$(date -u -d "4 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
           GLOBAL_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          
+
           export ENV_NAME=johann_dsp25
-          
+
           echo "## 📊 Regression Comparison Summary" >> $GITHUB_STEP_SUMMARY
-          
+
           # Run the comparison command from the flake
           nix develop --command run-comparison-report
-          
+
           # Add the comparison plots to the GitHub Summary
           for plot in reports/plots/comparisons/*.png; do
             FILE_NAME=$(basename "$plot")
