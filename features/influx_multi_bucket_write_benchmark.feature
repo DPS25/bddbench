@@ -16,11 +16,11 @@ Feature: InfluxDB v2 multi-bucket write benchmark (/api/v2/write)
     @normal
     Examples:
       | id    | measurement           | bucket_prefix      | bucket_count | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | duration_s |
-      | smoke | bddbench_multi_write  | bddbench_mb_smoke  | 3            | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10         |
-      | load  | bddbench_multi_write  | bddbench_mb_load   | 5            | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 20         |
-      | stress| bddbench_multi_write  | bddbench_mb_stress | 10           | 500        | 3                | none        | ns        | high             | 500             | in_order      | 45         |
-      | spike | bddbench_multi_write  | bddbench_mb_spike  | 10           | 250        | 8                | none        | ns        | medium           | 100             | in_order      | 10         |
-      | soak  | bddbench_multi_write  | bddbench_mb_soak   | 5            | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 300        |
+      | smoke | bddbench_multi_write  | bddbench_mb_smoke  | 2            | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10         |
+      | load  | bddbench_multi_write  | bddbench_mb_load   | 3            | 250        | 1                | none        | ns        | medium           | 100             | in_order      | 15         |
+      | stress| bddbench_multi_write  | bddbench_mb_stress | 5            | 400        | 2                | none        | ns        | high             | 250             | in_order      | 20         |
+      | spike | bddbench_multi_write  | bddbench_mb_spike  | 5            | 250        | 4                | none        | ns        | medium           | 100             | in_order      | 10         |
+      | soak  | bddbench_multi_write  | bddbench_mb_soak   | 3            | 250        | 1                | none        | ns        | medium           | 100             | in_order      | 60         |
 
     @experimental
     Examples:
