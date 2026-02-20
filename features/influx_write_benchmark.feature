@@ -17,9 +17,9 @@ Feature: InfluxDB v2 write benchmark (/api/v2/write)
       | id    | measurement           | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | batches |
       | smoke | bddbench_single_write | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10      |
       | load  | bddbench_single_write | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 10      |
-      | stress| bddbench_single_write | 500        | 4                | none        | ns        | high             | 500             | in_order      | 40      |
-      | spike | bddbench_single_write | 250        | 16               | none        | ns        | medium           | 100             | in_order      | 3       |
-      | soak  | bddbench_single_write | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 200     |
+      | stress| bddbench_single_write | 500        | 3                | none        | ns        | high             | 250             | in_order      | 20      |
+      | spike | bddbench_single_write | 250        | 8                | none        | ns        | medium           | 100             | in_order      | 3       |
+      | soak  | bddbench_single_write | 250        | 2                | none        | ns        | medium           | 100             | in_order      | 60      |
 
     @experimental
     Examples:
