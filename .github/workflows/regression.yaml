@@ -5,15 +5,13 @@ on:
     branches: [main]
   workflow_run:
     workflows: ["Host SUT Benchmarking"]
-    types:
-      - completed
+    types: [completed]
 
 jobs:
   benchmarking:
     if: >
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-
     runs-on: dsp25-main-influx
     strategy:
       fail-fast: false
@@ -53,20 +51,11 @@ jobs:
       - name: Run Full Benchmark Suite
         working-directory: ./bddbench
         run: |
-          START_TIME=$(date +%s%3N)
           export ENV_NAME=johann_dsp25
-          # This command appends timestamps to .suite_start_times and .suite_end_times
           nix develop --command run-full-benchmark-suite
-          END_TIME=$(date +%s%3N)
-          
-          BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
-          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-johann&var-scenario_id=\$__all&timezone=browser"
-          FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
-          
-          echo "## InfluxDB ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
-          echo "**Grafana:** [View Live Dashboard]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload Local Plots and Timestamps
+      # Upload using the name format seen in your artifact list
+      - name: Upload Bench Data
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -83,7 +72,9 @@ jobs:
       - name: Checkout bddbench
         uses: actions/checkout@v4
 
-      - name: Download All Benchmarking Data
+      # IMPORTANT: This downloads ALL bench-data-* artifacts and
+      # puts all .suite_ files into the current folder.
+      - name: Download and Merge Bench Data
         uses: actions/download-artifact@v4
         with:
           pattern: bench-data-*
@@ -93,25 +84,25 @@ jobs:
         run: |
           export ENV_NAME=johann_dsp25
           
+          # Debug: check if the files actually arrived
+          echo "Files in workspace:"
+          ls -a
+          
           echo "## 📊 Regression Comparison Summary" >> $GITHUB_STEP_SUMMARY
-
-          # run-comparison-report now uses the merged .suite_* files to get the exact window
+          
+          # This command in your flake will now find the merged .suite files
           nix develop --command run-comparison-report
-
-          # Append the comparison plots to the Summary
+          
+          # Add plots to summary
           if [ -d reports/plots/comparisons ]; then
             for plot in reports/plots/comparisons/*.png; do
-              FILE_NAME=$(basename "$plot")
-              echo "### $FILE_NAME" >> $GITHUB_STEP_SUMMARY
-              echo "| Metric | Status |" >> $GITHUB_STEP_SUMMARY
-              echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-              echo "| $FILE_NAME | ✅ Comparison Generated |" >> $GITHUB_STEP_SUMMARY
+              echo "### $(basename "$plot")" >> $GITHUB_STEP_SUMMARY
+              echo "![Comparison]($plot)" >> $GITHUB_STEP_SUMMARY
             done
           fi
 
-      - name: Upload Comparison Artifacts
+      - name: Upload Comparison Result
         uses: actions/upload-artifact@v4
         with:
           name: comparison-plots
           path: reports/plots/comparisons/*.png
-          retention-days: 14
