@@ -52,18 +52,20 @@ jobs:
         working-directory: ./bddbench
         run: |
           export ENV_NAME=johann_dsp25
+          # Capture start time BEFORE running the suite
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .version_start
+          
           nix develop --command run-full-benchmark-suite
+          
+          # Capture end time AFTER
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .version_end
 
-      # Upload using the name format seen in your artifact list
-      - name: Upload Bench Data
+      - name: Upload Timestamps
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bench-data-${{ matrix.version }}
-          path: |
-            bddbench/reports/plots/*.png
-            bddbench/.suite_*
-          retention-days: 1
+          name: timestamps-${{ matrix.version }}
+          path: bddbench/.version_*
 
   comparison_report:
     needs: benchmarking
@@ -72,36 +74,41 @@ jobs:
       - name: Checkout bddbench
         uses: actions/checkout@v4
 
-      # IMPORTANT: This downloads ALL bench-data-* artifacts and
-      # puts all .suite_ files into the current folder.
-      - name: Download and Merge Bench Data
+      - name: Download All Timestamps
         uses: actions/download-artifact@v4
         with:
-          pattern: bench-data-*
+          pattern: timestamps-*
           merge-multiple: true
 
-      - name: Generate Cross-Version Comparison
+      - name: Calculate Global Window and Run Comparison
         run: |
+          # Use shell logic to find absolute earliest start and latest end
+          # cat * reads all .version_start files from all matrix jobs
+          GLOBAL_START=$(cat .version_start | sort | head -n 1)
+          GLOBAL_END=$(cat .version_end | sort | tail -n 1)
+          
+          echo "## 📊 Regression Summary: $GLOBAL_START to $GLOBAL_END" >> $GITHUB_STEP_SUMMARY
           export ENV_NAME=johann_dsp25
           
-          # Debug: check if the files actually arrived
-          echo "Files in workspace:"
-          ls -a
-          
-          echo "## 📊 Regression Comparison Summary" >> $GITHUB_STEP_SUMMARY
-          
-          # This command in your flake will now find the merged .suite files
-          nix develop --command run-comparison-report
-          
-          # Add plots to summary
-          if [ -d reports/plots/comparisons ]; then
-            for plot in reports/plots/comparisons/*.png; do
-              echo "### $(basename "$plot")" >> $GITHUB_STEP_SUMMARY
-              echo "![Comparison]($plot)" >> $GITHUB_STEP_SUMMARY
-            done
-          fi
+          mkdir -p reports/plots/comparisons
 
-      - name: Upload Comparison Result
+          # Run Write Comparison
+          nix develop --command python src/evaluation/plot_comparison.py \
+            --start "$GLOBAL_START" \
+            --end "$GLOBAL_END" \
+            --measurement "bddbench_write_result" \
+            --kpi "throughput_points_per_s" \
+            --feature "reports/plots/comparisons/write_throughput"
+          
+          # Run Query Comparison
+          nix develop --command python src/evaluation/plot_comparison.py \
+            --start "$GLOBAL_START" \
+            --end "$GLOBAL_END" \
+            --measurement "bddbench_query_result" \
+            --kpi "total_avg_s" \
+            --feature "reports/plots/comparisons/query_latency"
+
+      - name: Upload Comparison Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: comparison-plots
