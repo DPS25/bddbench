@@ -18,9 +18,9 @@ Feature: InfluxDB v2 multi-bucket write benchmark (/api/v2/write)
       | id    | measurement           | bucket_prefix      | bucket_count | batch_size | parallel_writers | compression | precision | point_complexity | tag_cardinality | time_ordering | duration_s |
       | smoke | bddbench_multi_write  | bddbench_mb_smoke  | 2            | 100        | 1                | none        | ns        | low              | 10              | in_order      | 10         |
       | load  | bddbench_multi_write  | bddbench_mb_load   | 3            | 250        | 1                | none        | ns        | medium           | 100             | in_order      | 15         |
-      | stress| bddbench_multi_write  | bddbench_mb_stress | 5            | 400        | 2                | none        | ns        | high             | 250             | in_order      | 20         |
-      | spike | bddbench_multi_write  | bddbench_mb_spike  | 5            | 250        | 4                | none        | ns        | medium           | 100             | in_order      | 10         |
-      | soak  | bddbench_multi_write  | bddbench_mb_soak   | 3            | 250        | 1                | none        | ns        | medium           | 100             | in_order      | 60         |
+      | stress| bddbench_multi_write  | bddbench_mb_stress | 3            | 250        | 2                | none        | ns        | high             | 250             | in_order      | 20         |
+      | spike | bddbench_multi_write  | bddbench_mb_spike  | 2            | 350        | 1                | none        | ns        | medium           | 100             | in_order      | 10         |
+      | soak  | bddbench_multi_write  | bddbench_mb_soak   | 2            | 250        | 1                | none        | ns        | medium           | 100             | in_order      | 60         |
 
     @experimental
     Examples:
