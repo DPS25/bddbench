@@ -42,91 +42,84 @@
           pkgs.fio
           pkgs.mutagen
 
-          (pkgs.writeShellScriptBin "run-behave-normal" ''
-            set -e
-            behave -t="write and normal and singlebucket"  -f progress3 --no-skipped --no-snippets --no-summary
-            behave -t="write and normal and multibucket"  -f progress3 --no-skipped --no-snippets --no-summary
-            behave -t="query and normal"  -f progress3 --no-skipped --no-snippets --no-summary
-            behave -t="delete" -f progress3 --no-skipped --no-snippets --no-summary
-          '')
-
-          (pkgs.writeShellScriptBin "run-behave-normal-5-times" ''
-            set -e
-            for i in {1..10}; do run-behave-normal; sleep 1; done
-          '')
-
-          # ... inside buildInputs ...
 
           (pkgs.writeShellScriptBin "run-full-benchmark-suite" ''
             set -e
-            mkdir -p reports/plots
+            CUR_V=''${SUT_VERSION:-"unknown"}
+            PLOT_DIR="reports/plots/versions/$CUR_V"
+            mkdir -p "$PLOT_DIR"
 
-            # NEW: Record the global start time for this version's run
+            # Log start for comparison report
             date -u +"%Y-%m-%dT%H:%M:%SZ" >> .suite_start_times
-
             export PYTHONPATH=.
+
             run_block() {
-              local tag="$1"; local feature="$2"; local measurement="$3"
-              local start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+              local tag="$1"; local feat="$2"; local meas="$3"
+              echo "  -> Benchmarking $tag..."
+              local b_start=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
               for i in {1..5}; do
                 behave -t="$tag" -f progress3 --no-skipped --no-snippets --no-summary
               done
-              local end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-              python src/evaluation/plot_results.py --start "$start_time" --end "$end_time" \
-                --measurement "$measurement" --feature "reports/plots/$feature"
+              local b_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+              python src/evaluation/plot_results.py --start "$b_start" --end "$b_end" \
+                --measurement "$meas" --feature "$PLOT_DIR/$feat"
             }
 
+            # Your Requested Suite
             run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
-            run_block "write and normal and multibucket" "write_multi" "bddbench_multi_write_result"
-            run_block "query and normal" "query_perf" "bddbench_query_result"
+            run_block "write and normal and multibucket"  "write_multi"  "bddbench_multi_write_result"
+            run_block "query and normal"                  "query_perf"   "bddbench_query_result"
+            run_block "delete"                            "delete_perf"  "bddbench_delete_result"
+            run_block "multibucket and delete"            "delete_multi" "bddbench_multi_delete_result"
+            run_block "me and normal"                     "user_me"      "bddbench_user_me_result"
+            run_block "crud and normal"                   "user_crud"    "bddbench_user_crud_result"
 
-            # NEW: Record the global end time
             date -u +"%Y-%m-%dT%H:%M:%SZ" >> .suite_end_times
+          '')
+
+          (pkgs.writeShellScriptBin "run-all-matrix-versions" ''
+            set -e
+            # Ensure we use the secrets path provided by the flake input
+            MATRIX=("2.1.1:benedikt-influx2-1-1" "2.4.0:benedikt-influx2-4-0" "2.5.1:benedikt-influx2-5-1" "2.7.6:benedikt-influx2-7-6")
+
+            rm -f .suite_start_times .suite_end_times
+            mkdir -p reports/plots/versions reports/plots/comparisons
+
+            for entry in "''${MATRIX[@]}"; do
+              IFS=":" read -r VERSION ATTR <<< "$entry"
+              echo "🏗️  Deploying InfluxDB $VERSION via ${secrets}"
+
+              ssh nixos@dsp25-benedikt "sudo rm -rf /var/lib/influxdb2/"
+
+              nixos-rebuild switch --flake "${secrets}#$ATTR" \
+                --target-host nixos@dsp25-benedikt --sudo
+
+              SUT_VERSION=$VERSION run-full-benchmark-suite
+            done
+            run-comparison-report
           '')
 
           (pkgs.writeShellScriptBin "run-comparison-report" ''
             set -e
-            if [ ! -f .suite_start_times ]; then
-              echo "❌ No timestamp logs found. Run benchmarks first or check .suite_start_times"
-              exit 1
-            fi
+            [ ! -f .suite_start_times ] && echo "❌ No timestamp logs found." && exit 1
+            G_START=$(sort .suite_start_times | head -n 1)
+            G_END=$(sort .suite_end_times | tail -n 1)
 
-            GLOBAL_START=$(sort .suite_start_times | head -n 1)
-            GLOBAL_END=$(sort .suite_end_times | tail -n 1)
-
-            mkdir -p reports/plots/comparisons
-
-            # Format: measurement:field_name:file_label
-            # Note: query results use 'total_avg_s', not 'latency_avg_s'
             KPI_LIST=(
               "bddbench_write_result:throughput_points_per_s:write_throughput"
+              "bddbench_multi_write_result:throughput_points_per_s:write_multi_throughput"
               "bddbench_query_result:total_avg_s:query_latency"
-              "bddbench_delete_result:total_duration_s:delete_performance"
+              "bddbench_delete_result:total_duration_s:delete_latency"
+              "bddbench_multi_delete_result:total_duration_s:delete_multi_latency"
+              "bddbench_user_me_result:latency_avg_ms:user_me_latency"
+              "bddbench_user_crud_result:total_duration_s:user_crud_latency"
             )
 
             for entry in "''${KPI_LIST[@]}"; do
-              IFS=":" read -r measurement kpi label <<< "$entry"
-              echo "📊 Generating Comparison for $label ($kpi)..."
-              python src/evaluation/plot_comparison.py \
-                --start "$GLOBAL_START" \
-                --end "$GLOBAL_END" \
-                --measurement "$measurement" \
-                --kpi "$kpi" \
-                --feature "reports/plots/comparisons/$label"
+              IFS=":" read -r meas kpi label <<< "$entry"
+              python src/evaluation/plot_comparison.py --start "$G_START" --end "$G_END" \
+                --measurement "$meas" --kpi "$kpi" --feature "reports/plots/comparisons/$label"
             done
-          '')
-
-          (pkgs.writeShellScriptBin "run-everything-5-times" ''
-            set -e
-            run-behave-host-benchmarks-5-times
-            run-behave-normal-5-times
-          '')
-
-          (pkgs.writeShellScriptBin "run-behave-host-benchmarks-5-times" ''
-            set -e
-            for i in {1..5}; do behave -t="memory" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
-            for i in {1..5}; do behave -t="storage" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
-            for i in {1..5}; do behave -t="cpu" -f progress3 --no-skipped --no-snippets --no-summary; sleep 1; done
           '')
 
         ];

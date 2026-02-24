@@ -13,103 +13,52 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: dsp25-main-influx
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        version: ["2.1.1", "2.4.0", "2.5.1", "2.7.6"]
-        include:
-          - version: "2.1.1"
-            flake_attr: "benedikt-influx2-1-1"
-          - version: "2.4.0"
-            flake_attr: "benedikt-influx2-4-0"
-          - version: "2.5.1"
-            flake_attr: "benedikt-influx2-5-1"
-          - version: "2.7.6"
-            flake_attr: "benedikt-influx2-7-6"
 
     steps:
-      - name: Checkout bddbench
+      - name: Checkout bddbench (Benchmark Code)
         uses: actions/checkout@v4
         with:
           path: bddbench
 
-      - name: Checkout nix
+      - name: Checkout nix (Secrets & Deployment Flake)
         uses: actions/checkout@v4
         with:
           repository: DPS25/nix
           token: ${{ secrets.GH_PAT }}
-          path: nix
+          path: nix-secrets
 
-      - name: Deploy Influx ${{ matrix.version }}
-        working-directory: ./nix
-        run: |
-          ssh dsp25-johann "sudo rm -rf /var/lib/influxdb2/"
-          nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
-            --target-host dsp25-johann --build-host "" --sudo
-
-      - name: Run Full Benchmark Suite
+      - name: Execute Full Matrix via Flake
         working-directory: ./bddbench
         run: |
-          export ENV_NAME=johann_dsp25
-          # Capture start time BEFORE running the suite
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > .version_start
-          
-          nix develop --command run-full-benchmark-suite
-          
-          # Capture end time AFTER
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > .version_end
+          # 1. Set the environment name for your shellHook logic
+          export ENV_NAME=benedikt_dsp25
+          nix develop
+          run-all-matrix-versions
 
-      - name: Upload Timestamps
+      - name: Generate Summary and Grafana Link
+        working-directory: ./bddbench
+        run: |
+          # Extract timing from the files created by the flake scripts
+          START_TIME=$(sort .suite_start_times | head -n 1)
+          END_TIME=$(sort .suite_end_times | tail -n 1)
+          
+          # Convert ISO8601 to Unix MS for Grafana if needed, 
+          # but Grafana supports ISO8601 strings in URLs too.
+          BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
+          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=cpu&var-scenario_id=memory&var-scenario_id=storage&timezone=browser"
+          FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
+
+          echo "## 📊 Regression Result Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Test Period: \`$START_TIME\` to \`$START_TIME\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🛠️ Host SUT Performance Baseline" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana Dashboard:** [View Host Metrics]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: timestamps-${{ matrix.version }}
-          path: bddbench/.version_*
-
-  comparison_report:
-    needs: benchmarking
-    runs-on: dsp25-main-influx
-    steps:
-      - name: Checkout bddbench
-        uses: actions/checkout@v4
-
-      - name: Download All Timestamps
-        uses: actions/download-artifact@v4
-        with:
-          pattern: timestamps-*
-          merge-multiple: true
-
-      - name: Calculate Global Window and Run Comparison
-        run: |
-          # Use shell logic to find absolute earliest start and latest end
-          # cat * reads all .version_start files from all matrix jobs
-          GLOBAL_START=$(cat .version_start | sort | head -n 1)
-          GLOBAL_END=$(cat .version_end | sort | tail -n 1)
-          
-          echo "## 📊 Regression Summary: $GLOBAL_START to $GLOBAL_END" >> $GITHUB_STEP_SUMMARY
-          export ENV_NAME=johann_dsp25
-          
-          mkdir -p reports/plots/comparisons
-
-          # Run Write Comparison
-          nix develop --command python src/evaluation/plot_comparison.py \
-            --start "$GLOBAL_START" \
-            --end "$GLOBAL_END" \
-            --measurement "bddbench_write_result" \
-            --kpi "throughput_points_per_s" \
-            --feature "reports/plots/comparisons/write_throughput"
-          
-          # Run Query Comparison
-          nix develop --command python src/evaluation/plot_comparison.py \
-            --start "$GLOBAL_START" \
-            --end "$GLOBAL_END" \
-            --measurement "bddbench_query_result" \
-            --kpi "total_avg_s" \
-            --feature "reports/plots/comparisons/query_latency"
-
-      - name: Upload Comparison Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: comparison-plots
-          path: reports/plots/comparisons/*.png
+          name: regression-plots
+          path: |
+            bddbench/reports/plots/versions/
+            bddbench/reports/plots/comparisons/
