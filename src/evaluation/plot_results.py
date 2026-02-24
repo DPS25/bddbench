@@ -4,7 +4,13 @@ import subprocess
 import argparse
 import pandas as pd
 import numpy as np
+
+# headless-safe for CI
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
+from scipy import stats
 import seaborn as sns
 import warnings
 from urllib.parse import urlparse
@@ -87,7 +93,31 @@ def fetch_data(start, end, measurement, sut_hostname):
         client.close()
 
 
-def generate_report(df, res_df, feature_name):
+# --- Student-t CI summaries (within the same start/end window) ---
+def summarize_with_t_ci(df: pd.DataFrame, group_col: str, value_col: str, alpha: float = 0.05) -> pd.DataFrame:
+    if df.empty or group_col not in df.columns or value_col not in df.columns:
+        return pd.DataFrame(columns=[group_col, "n", "mean", "ci"])
+    g = df[[group_col, value_col]].copy()
+    g[value_col] = pd.to_numeric(g[value_col], errors="coerce")
+    g = g.dropna(subset=[value_col])
+
+    rows = []
+    for key, sub in g.groupby(group_col):
+        x = sub[value_col].to_numpy(dtype=float)
+        n = len(x)
+        mean = float(np.mean(x)) if n else np.nan
+        if n >= 2:
+            sd = float(np.std(x, ddof=1))
+            se = sd / np.sqrt(n)
+            tcrit = stats.t.ppf(1 - alpha / 2, n - 1)
+            ci = float(tcrit * se)
+        else:
+            ci = np.nan
+        rows.append({group_col: key, "n": n, "mean": mean, "ci": ci})
+    return pd.DataFrame(rows)
+
+
+def generate_report(df, res_df, feature_name, alpha=0.05):
     if df.empty: return
 
     found_scenarios = df["scenario_id"].unique()
@@ -106,18 +136,41 @@ def generate_report(df, res_df, feature_name):
         ax.set_ylabel(ylabel)
         ax.set_ylim(0, None)
 
-    # 1. Performance (Throughput)
+    # 1. Performance (Throughput) -> mean ± t-CI + n labels
     perf_col = next((c for c in ["throughput_points_per_s", "latency_s"] if c in df.columns), None)
     if perf_col:
-        sns.barplot(x="scenario_id", y=perf_col, data=df, ax=axes[0], palette=palette, order=plot_order,
-                    hue="scenario_id", legend=False)
-        finalize_ax(axes[0], "Workload Performance", perf_col)
+        stats_df = summarize_with_t_ci(df, "scenario_id", perf_col, alpha=alpha)
+        if not stats_df.empty:
+            stats_df = stats_df.set_index("scenario_id").reindex(plot_order).reset_index()
+            sns.barplot(x="scenario_id", y="mean", data=stats_df, ax=axes[0], palette=palette, order=plot_order,
+                        hue="scenario_id", legend=False)
+            xs = np.arange(len(plot_order))
+            axes[0].errorbar(xs, stats_df["mean"].to_numpy(dtype=float),
+                             yerr=stats_df["ci"].to_numpy(dtype=float),
+                             fmt="none", capsize=6, elinewidth=2)
+            for i, row in stats_df.iterrows():
+                if pd.notna(row["mean"]):
+                    axes[0].text(i, row["mean"], f"n={int(row['n'])}", ha="center", va="bottom", fontsize=10)
+            finalize_ax(axes[0], f"Workload Performance (mean ± t-CI)", perf_col)
+        else:
+            sns.barplot(x="scenario_id", y=perf_col, data=df, ax=axes[0], palette=palette, order=plot_order,
+                        hue="scenario_id", legend=False)
+            finalize_ax(axes[0], "Workload Performance", perf_col)
 
-    # 2. Latency Stability
+    # 2. Latency Stability -> boxplot, overlay mean ± t-CI, keep P99
     stab_col = next((c for c in ["latency_avg_s", "total_avg_s"] if c in df.columns), None)
     if stab_col:
         sns.boxplot(x="scenario_id", y=stab_col, data=df, ax=axes[1], palette=palette, order=plot_order,
                     hue="scenario_id", legend=False, showfliers=False)
+
+        sstats = summarize_with_t_ci(df, "scenario_id", stab_col, alpha=alpha)
+        if not sstats.empty:
+            sstats = sstats.set_index("scenario_id").reindex(plot_order).reset_index()
+            xs = np.arange(len(plot_order))
+            axes[1].errorbar(xs, sstats["mean"].to_numpy(dtype=float),
+                             yerr=sstats["ci"].to_numpy(dtype=float),
+                             fmt="o", capsize=6, elinewidth=2, markersize=6)
+
         p99 = df.groupby("scenario_id")[stab_col].quantile(0.99)
         for i, s in enumerate(plot_order):
             if s in p99: axes[1].plot(i, p99[s], marker='D', color='red', markersize=10)
@@ -140,7 +193,7 @@ def generate_report(df, res_df, feature_name):
 
     # 5. Go Goroutines
     if not res_df.empty and 'go_goroutines' in res_df.columns:
-        sns.lineplot(x="scenario_id", y="go_goroutines", data=res_df, ax=axes[4], marker="o", color="#8E44AD",
+        sns.lineplot(x="scenario_id", y="go_goroutines", data=res_df, ax=axes[4], marker="o",
                      linewidth=3, errorbar=None)
         finalize_ax(axes[4], "InfluxDB Threading", "Active Goroutines")
 
@@ -154,6 +207,7 @@ def generate_report(df, res_df, feature_name):
     plt.suptitle(f"FEATURE REPORT: {feature_name.upper()}", fontsize=24, fontweight='bold', y=0.98)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig(f"{feature_name}.png", dpi=150)
+    plt.close(fig)
     print(f"✅ Six-panel report generated: {feature_name}.png")
 
 
@@ -163,8 +217,10 @@ if __name__ == "__main__":
     parser.add_argument("--end", required=True)
     parser.add_argument("--measurement", required=True);
     parser.add_argument("--feature", required=True)
+    parser.add_argument("--alpha", type=float, default=0.05, help="Alpha for Student-t confidence intervals")
+
     args = parser.parse_args()
 
     hn = get_sut_hostname()
     b_data, r_data = fetch_data(args.start, args.end, args.measurement, hn)
-    generate_report(b_data, r_data, args.feature)
+    generate_report(b_data, r_data, args.feature, alpha=args.alpha)
