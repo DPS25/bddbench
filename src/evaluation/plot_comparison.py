@@ -5,6 +5,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from influxdb_client import InfluxDBClient
 
+
 def fetch_data(start, end, measurement):
     client = InfluxDBClient(
         url=os.getenv("INFLUXDB_MAIN_URL"),
@@ -12,11 +13,13 @@ def fetch_data(start, end, measurement):
         org=os.getenv("INFLUXDB_MAIN_ORG")
     )
 
+    # Note: We include 'operation' in the pivot to distinguish
+    # between 'me' and 'lifecycle_crud' in the summary table
     query = f'''
-    from(bucket: "dsp25")
+    from(bucket: "{os.getenv("INFLUXDB_MAIN_BUCKET", "dsp25")}")
       |> range(start: {start}, stop: {end})
       |> filter(fn: (r) => r._measurement == "{measurement}")
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> pivot(rowKey:["_time", "operation", "scenario_id"], columnKey: ["_field"], valueColumn: "_value")
     '''
     try:
         df = client.query_api().query_data_frame(query)
@@ -26,60 +29,51 @@ def fetch_data(start, end, measurement):
     finally:
         client.close()
 
+
 def plot_version_comparison(df, kpi, feature_name):
-    if df.empty:
-        print("⚠️ No data found.")
+    if df is None or df.empty:
+        print(f"⚠️ No data found for {feature_name}.")
         return
 
-    # 1. Force KPI to numeric (this fixes the "2.0" issue)
-    if kpi in df.columns:
-        # errors='coerce' turns non-numeric strings into NaN
-        df[kpi] = pd.to_numeric(df[kpi], errors='coerce')
-    else:
-        print(f"⚠️ Skipping: Field '{kpi}' not found in columns.")
-        return
-
-    # 2. Drop missing data
+    # Ensure KPI is numeric
+    df[kpi] = pd.to_numeric(df[kpi], errors='coerce')
     df = df.dropna(subset=[kpi])
 
-    if df.empty:
-        print(f"⚠️ Skipping: No valid numeric data for '{kpi}'.")
-        return
-
-    # 3. Detect X-axis column
-    version_col = next((c for c in ["sut_version", "sut_host", "version", "host"] if c in df.columns), None)
+    # Find version column
+    version_col = next((c for c in ["sut_version", "sut_host", "version"] if c in df.columns), None)
     if not version_col:
-        print(f"❌ Error: No version column found.")
-        return
+        # Fallback: if no version tag, we use the run_id or time
+        df['version_label'] = "Run " + df['run_id'].str[:4]
+        version_col = 'version_label'
 
-    # Debug: Print the actual values to the console so you can see them
-    print(f"\n--- Data Summary for {kpi} ---")
-    print(df.groupby([version_col, 'scenario_id'], observed=True)[kpi].mean())
-
-    # 4. Plotting
-    plt.figure(figsize=(14, 8))
+    plt.figure(figsize=(12, 6))
     sns.set_style("whitegrid")
 
-    order = ["smoke", "average", "load", "stress", "soak", "spike", "breakpoint"]
-    df['scenario_id'] = pd.Categorical(df['scenario_id'], categories=order, ordered=True)
+    # If it's the User Summary, we might have multiple operations (me vs crud)
+    # Use 'operation' as a sub-hue if it exists
+    hue_col = "scenario_id"
+    if "operation" in df.columns and df["operation"].nunique() > 1:
+        df["group"] = df["operation"] + " (" + df["scenario_id"].astype(str) + ")"
+        hue_col = "group"
 
     ax = sns.barplot(
         data=df,
         x=version_col,
         y=kpi,
-        hue="scenario_id",
-        palette="viridis",
-        errorbar="sd" # Shows standard deviation instead of just a count
+        hue=hue_col,
+        palette="magma",
+        errorbar="sd"
     )
 
-    plt.title(f"Comparison: {kpi.replace('_', ' ').upper()}", fontsize=16, fontweight='bold')
-    plt.xlabel("InfluxDB Version (sut_version)", fontsize=12)
-    plt.ylabel(kpi.replace("_", " ").title(), fontsize=12)
-    plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title(f"User Benchmark: {kpi.replace('_', ' ').upper()}", fontsize=14)
+    plt.ylabel(kpi.replace("_", " ").title())
+    plt.xticks(rotation=15)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
     plt.tight_layout()
-    plt.savefig(f"{feature_name}_comparison.png", dpi=150)
-    print(f"📈 Comparison Plot Generated: {feature_name}_comparison.png")
+    plt.savefig(f"{feature_name}.png", dpi=150)
+    print(f"📈 Plot saved: {feature_name}.png")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

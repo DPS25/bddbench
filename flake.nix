@@ -59,6 +59,7 @@
               local b_start=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
               for i in {1..5}; do
                 behave -t="$tag" -f progress3 --no-skipped --no-snippets --no-summary
+                sleep 2s
               done
               local b_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
               python src/evaluation/plot_results.py --start "$b_start" --end "$b_end" \
@@ -71,8 +72,8 @@
             run_block "query and normal"                  "query_perf"   "bddbench_query_result"
             run_block "delete"                            "delete_perf"  "bddbench_delete_result"
             run_block "multibucket and delete"            "delete_multi" "bddbench_multi_delete_result"
-            run_block "me and normal"                     "user_me"      "bddbench_user_me_result"
-            run_block "crud and normal"                   "user_crud"    "bddbench_user_crud_result"
+            run_block "me and normal"   "user_me"   "bddbench_user_benchmark_summary"
+            run_block "crud and normal"  "user_crud" "bddbench_user_benchmark_summary"
 
             date -u +"%Y-%m-%dT%H:%M:%SZ" >> .suite_end_times
           '')
@@ -93,7 +94,7 @@
 
               nixos-rebuild switch --flake "${secrets}#$ATTR" \
                 --target-host nixos@dsp25-benedikt --sudo
-
+              sleep 2s
               SUT_VERSION=$VERSION run-full-benchmark-suite
             done
             run-comparison-report
