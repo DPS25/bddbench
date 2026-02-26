@@ -69,8 +69,9 @@
             # Your Requested Suite
             run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
             run_block "write and normal and multibucket"  "write_multi"  "bddbench_multi_write_result"
-            run_block "query and normal"                  "query_perf"   "bddbench_query_result"
-            run_block "delete"                            "delete_perf"  "bddbench_delete_result"
+            run_block "query and normal and singlebucket"  "query_single"   "bddbench_query_result"
+            run_block "query and normal and multibucket"  "query_multi"  "bddbench_query_write_result"
+            run_block "delete and not multibucket"                            "delete"  "bddbench_delete_result"
             run_block "multibucket and delete"            "delete_multi" "bddbench_multi_delete_result"
             run_block "me and normal"   "user_me"   "bddbench_user_benchmark_summary"
             run_block "crud and normal"  "user_crud" "bddbench_user_benchmark_summary"
@@ -100,28 +101,36 @@
             run-comparison-report
           '')
 
-          (pkgs.writeShellScriptBin "run-comparison-report" ''
-            set -e
-            [ ! -f .suite_start_times ] && echo "❌ No timestamp logs found." && exit 1
-            G_START=$(sort .suite_start_times | head -n 1)
-            G_END=$(sort .suite_end_times | tail -n 1)
+(pkgs.writeShellScriptBin "run-comparison-report" ''
+  set -e
+  [ ! -f .suite_start_times ] && echo "❌ No timestamp logs found." && exit 1
 
-            KPI_LIST=(
-              "bddbench_write_result:throughput_points_per_s:write_throughput"
-              "bddbench_multi_write_result:throughput_points_per_s:write_multi_throughput"
-              "bddbench_query_result:total_avg_s:query_latency"
-              "bddbench_delete_result:total_duration_s:delete_latency"
-              "bddbench_multi_delete_result:total_duration_s:delete_multi_latency"
-              "bddbench_user_me_result:latency_avg_ms:user_me_latency"
-              "bddbench_user_crud_result:total_duration_s:user_crud_latency"
-            )
+  # Get the absolute start of the first test and end of the last test
+  G_START=$(sort .suite_start_times | head -n 1)
+  G_END=$(sort .suite_end_times | tail -n 1)
 
-            for entry in "''${KPI_LIST[@]}"; do
-              IFS=":" read -r meas kpi label <<< "$entry"
-              python src/evaluation/plot_comparison.py --start "$G_START" --end "$G_END" \
-                --measurement "$meas" --kpi "$kpi" --feature "reports/plots/comparisons/$label"
-            done
-          '')
+  echo "📅 Full Range: $G_START to $G_END"
+
+  KPI_LIST=(
+    "bddbench_write_result:throughput_points_per_s:write_throughput"
+    "bddbench_multi_write_result:throughput_points_per_s:write_multi_throughput"
+    "bddbench_query_result:total_avg_s:query_latency"
+    "bddbench_delete_result:total_duration_s:delete_latency"
+    "bddbench_multi_delete_result:total_duration_s:delete_multi_latency"
+    # FIXED: These now point to the summary measurement used in run-full-benchmark-suite
+    "bddbench_user_benchmark_summary:latency_avg_ms:user_me_latency"
+    "bddbench_user_benchmark_summary:total_duration_s:user_crud_latency"
+  )
+
+  mkdir -p reports/plots/comparisons
+
+  for entry in "''${KPI_LIST[@]}"; do
+    IFS=":" read -r meas kpi label <<< "$entry"
+    echo "📊 Generating multi-version comparison for $label..."
+    python src/evaluation/plot_comparison.py --start "$G_START" --end "$G_END" \
+      --measurement "$meas" --kpi "$kpi" --feature "reports/plots/comparisons/$label"
+  done
+'')
 
         ];
 
