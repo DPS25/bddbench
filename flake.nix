@@ -113,8 +113,11 @@
 
   KPI_LIST=(
     "bddbench_write_result:throughput_points_per_s:write_throughput"
+    "bddbench_write_result:latency_avg_s:write_latency"
     "bddbench_multi_write_result:throughput_points_per_s:write_multi_throughput"
+    "bddbench_multi_write_result:latency_avg_s:write_multi_latency"
     "bddbench_query_result:total_avg_s:query_latency"
+    "bddbench_multi_query_result:total_avg_s:multi_query_latency"
     "bddbench_delete_result:total_duration_s:delete_latency"
     "bddbench_multi_delete_result:total_duration_s:delete_multi_latency"
     "bddbench_user_benchmark_summary:latency_avg_ms:user_me_latency"
