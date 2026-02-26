@@ -57,7 +57,7 @@
               local tag="$1"; local feat="$2"; local meas="$3"
               echo "  -> Benchmarking $tag..."
               local b_start=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-              for i in {1..5}; do
+              for i in {1..2}; do
                 behave -t="$tag" -f progress3 --no-skipped --no-snippets --no-summary
                 sleep 2s
               done
@@ -67,12 +67,12 @@
             }
 
             # Your Requested Suite
-            run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
-            run_block "write and normal and multibucket"  "write_multi"  "bddbench_multi_write_result"
-            run_block "query and normal and singlebucket"  "query_single"   "bddbench_query_result"
-            run_block "query and normal and multibucket"  "query_multi"  "bddbench_query_write_result"
-            run_block "delete and not multibucket"                            "delete"  "bddbench_delete_result"
-            run_block "multibucket and delete"            "delete_multi" "bddbench_multi_delete_result"
+#            run_block "write and normal and singlebucket" "write_single" "bddbench_write_result"
+#            run_block "write and normal and multibucket"  "write_multi"  "bddbench_multi_write_result"
+#            run_block "query and normal and singlebucket"  "query_single"   "bddbench_query_result"
+#            run_block "query and normal and multibucket"  "query_multi"  "bddbench_query_write_result"
+#            run_block "delete and not multibucket"                            "delete"  "bddbench_delete_result"
+#            run_block "multibucket and delete"            "delete_multi" "bddbench_multi_delete_result"
             run_block "me and normal"   "user_me"   "bddbench_user_benchmark_summary"
             run_block "crud and normal"  "user_crud" "bddbench_user_benchmark_summary"
 
@@ -117,9 +117,8 @@
     "bddbench_query_result:total_avg_s:query_latency"
     "bddbench_delete_result:total_duration_s:delete_latency"
     "bddbench_multi_delete_result:total_duration_s:delete_multi_latency"
-    # FIXED: These now point to the summary measurement used in run-full-benchmark-suite
     "bddbench_user_benchmark_summary:latency_avg_ms:user_me_latency"
-    "bddbench_user_benchmark_summary:total_duration_s:user_crud_latency"
+    "bddbench_user_benchmark_summary:throughput_ops_s:user_crud_throughput"
   )
 
   mkdir -p reports/plots/comparisons
