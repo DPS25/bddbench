@@ -39,7 +39,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Install dependencies
         run: |
@@ -47,12 +47,12 @@ jobs:
 
       - name: Run Black (code formatting check)
         run: |
-          uv run black --check --diff .
+          .venv/bin/black --check --diff .
 
       - name: Run isort (import sorting check)
         run: |
-          uv run isort --check-only --diff .
+          .venv/bin/isort --check-only --diff .
 
       - name: Run Flake8 (linting)
         run: |
-          uv run flake8 .
+          .venv/bin/flake8 .
