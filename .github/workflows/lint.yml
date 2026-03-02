@@ -39,11 +39,11 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Install dependencies
         run: |
-          uv sync --group dev --frozen
+          uv sync --only-dev --frozen
 
       - name: Run Black (code formatting check)
         run: |
