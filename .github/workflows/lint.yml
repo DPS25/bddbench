@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: "pyproject.toml" 
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -47,12 +47,12 @@ jobs:
 
       - name: Run Black (code formatting check)
         run: |
-          .venv/bin/black --check --diff .
-
+          uv run --frozen --no-sync -- black --check --diff .
+          
       - name: Run isort (import sorting check)
         run: |
-          .venv/bin/isort --check-only --diff .
+          uv run --frozen --no-sync -- isort --check-only --diff .
 
       - name: Run Flake8 (linting)
         run: |
-          .venv/bin/flake8 .
+          uv run --frozen --no-sync -- flake8 .
