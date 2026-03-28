@@ -1,61 +1,81 @@
 name: Regression Test
 
 on:
+  # Trigger on PRs as usual
   pull_request:
     branches: [main]
+  # Trigger after Host Benchmarking finishes on main
   workflow_run:
     workflows: ["Host SUT Benchmarking"]
-    types: [completed]
+    types:
+      - completed
 
 jobs:
   benchmarking:
     if: >
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
     runs-on: dsp25-main-influx
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        version: ["2.1.1", "2.4.0", "2.5.1", "2.7.6"]
+        include:
+          - version: "2.1.1"
+            flake_attr: "benedikt-influx2-1-1"
+          - version: "2.4.0"
+            flake_attr: "benedikt-influx2-4-0"
+          - version: "2.5.1"
+            flake_attr: "benedikt-influx2-5-1"
+          - version: "2.7.6"
+            flake_attr: "benedikt-influx2-7-6"
 
     steps:
-      - name: Checkout bddbench (Benchmark Code)
+      - name: Checkout bddbench
         uses: actions/checkout@v4
         with:
           path: bddbench
 
-      - name: Checkout nix (Secrets & Deployment Flake)
+      - name: Checkout nix
         uses: actions/checkout@v4
         with:
           repository: DPS25/nix
           token: ${{ secrets.GH_PAT }}
-          path: nix-secrets
+          path: nix
 
-      - name: Execute Full Matrix via Flake
+      - name: Deploy Influx ${{ matrix.version }}
+        working-directory: ./nix
+        run: |
+          ssh dsp25-benedikt "sudo rm -rf /var/lib/influxdb2/"
+          nixos-rebuild switch --flake .#${{ matrix.flake_attr }} \
+            --target-host dsp25-benedikt --build-host "" --sudo
+
+      - name: Run Full Benchmark Suite
         working-directory: ./bddbench
         run: |
-          export ENV_NAME=benedikt_dsp25 && nix develop --command "run-all-matrix-versions"
-
-      - name: Generate Summary and Grafana Link
-        working-directory: ./bddbench
-        run: |
-          # Extract timing from the files created by the flake scripts
-          START_TIME=$(sort .suite_start_times | head -n 1)
-          END_TIME=$(sort .suite_end_times | tail -n 1)
+          START_TIME=$(date +%s%3N)
+          export ENV_NAME=benedikt_dsp25
+          nix develop --command run-full-benchmark-suite
+          END_TIME=$(date +%s%3N)
           
-          # Convert ISO8601 to Unix MS for Grafana if needed, 
-          # but Grafana supports ISO8601 strings in URLs too.
           BASE_URL="https://grafana.johann-hackler.com/d/adjcczp/dsp25-bddbench"
-          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=cpu&var-scenario_id=memory&var-scenario_id=storage&timezone=browser"
+          PARAMS="orgId=1&var-bucket=dsp25&var-sut=dsp25-benedikt&var-scenario_id=\$__all&timezone=browser"
           FINAL_URL="${BASE_URL}?${PARAMS}&from=${START_TIME}&to=${END_TIME}"
+          
+          echo "## InfluxDB ${{ matrix.version }} Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana:** [View Live Dashboard]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
+          
+          for plot in reports/plots/*.png; do
+            FILE_NAME=$(basename "$plot")
+            echo "| $FILE_NAME | Generated | \`plots-${{ matrix.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          done
 
-          echo "## 📊 Regression Result Summary" >> $GITHUB_STEP_SUMMARY
-          echo "Test Period: \`$START_TIME\` to \`$START_TIME\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🛠️ Host SUT Performance Baseline" >> $GITHUB_STEP_SUMMARY
-          echo "**Grafana Dashboard:** [View Host Metrics]($FINAL_URL)" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload Results
+      - name: Upload Plot Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: regression-plots
-          path: |
-            bddbench/reports/plots/versions/
-            bddbench/reports/plots/comparisons/
+          name: plots-${{ matrix.version }}
+          path: bddbench/reports/plots/*.png
+          retention-days: 14

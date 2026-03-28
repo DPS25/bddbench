@@ -40,10 +40,10 @@ Feature: InfluxDB v2 User API benchmark (/api/v2/me, /api/v2/users)
     Examples:
       | id          | username_complexity | password_complexity | concurrent_clients | iterations |
       | smoke       | low                 | low                 | 1                  | 10         |
-      | load        | high                | high                | 4                  | 10         |
-      | stress      | high                | high                | 6                  | 10         |
-      | spike       | medium              | medium              | 12                 | 10         |
-      | soak        | medium              | medium              | 2                  | 10        |
+      | load        | high                | high                | 4                  | 50         |
+      | stress      | high                | high                | 6                  | 80         |
+      | spike       | medium              | medium              | 12                 | 20         |
+      | soak        | medium              | medium              | 2                  | 200        |
 
     @experimental
     Examples:
