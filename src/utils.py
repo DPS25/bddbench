@@ -302,11 +302,11 @@ def build_benchmark_point(
 
 def scenario_id_from_outfile(outfile: str, prefixes: Sequence[str]) -> str:
     """
-    used in: 
-    influx_write, 
-    influx_query, 
-    influx_multi_bucket, 
-    influx_delete, 
+    used in:
+    influx_write,
+    influx_query,
+    influx_multi_bucket,
+    influx_delete,
     influx_user
 
     extracts a scenario_id from a report-filename
